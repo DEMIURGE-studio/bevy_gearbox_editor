@@ -1,6 +1,27 @@
 [package]
 name = "bevy_gearbox_editor"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+bevy = { version = "0.16.1", features = ["bevy_remote"] }
+bevy_gearbox = { path = "../bevy_gearbox" }
+bevy-inspector-egui = "0.32.0"
+bevy_egui = "0.35.1"
+
+egui-snarl = { path = "../egui-snarl", features = ["serde", "egui-probe"] }
+
+egui = { version = "0.32" }
+eframe = { version = "0.32", features = ["serde", "persistence"] }
+egui_extras = { version = "0.32", features = ["all_loaders"] }
+syn = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+egui-probe = { version = "0.9.0", features = ["derive"] }
+egui-scale = { version = "0.2.0" }
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3.70"
+
+slab = { version = "0.4" }
+smallvec = { version = "1.15", features = ["const_new"] }
