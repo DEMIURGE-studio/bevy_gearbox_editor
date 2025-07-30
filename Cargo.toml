@@ -25,3 +25,4 @@ web-sys = "0.3.70"
 
 slab = { version = "0.4" }
 smallvec = { version = "1.15", features = ["const_new"] }
+bevy_reflect = "0.16.1"
