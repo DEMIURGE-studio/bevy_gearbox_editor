@@ -4,8 +4,7 @@ use bevy::prelude::*;
 use bevy::reflect::Reflect;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::GearboxPlugin;
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use bevy_egui::EguiPlugin;
+use bevy_gearbox_editor::GearboxEditorPlugin;
 
 fn main() {
     App::new()
@@ -24,8 +23,7 @@ fn main() {
         .register_type::<TransitionListener<CastAbility>>()
         .register_type::<TransitionListener<OnComplete>>()
         .add_plugins((
-            EguiPlugin::default(),
-            WorldInspectorPlugin::new(),
+            GearboxEditorPlugin::default(),
         ))
         .run();
 }
@@ -34,12 +32,12 @@ fn main() {
 
 /// The root of our ability's state machine.
 #[derive(Component, Reflect, Default)]
-#[reflect(Component)]
+#[reflect(Component, Default)]
 struct AbilityMachine;
 
 /// A component to manage the repeater's state.
 #[derive(Component, Reflect)]
-#[reflect(Component)]
+#[reflect(Component, Default)]
 struct Repeater {
     timer: Timer,
     remaining: u32,
