@@ -11,3 +11,5 @@ bevy = "0.16.0"
 bevy-inspector-egui = "0.32.0"
 bevy_egui = "0.35.1"
 bevy_gearbox = { path = "../bevy_gearbox" }
+egui = "0.31.1"
+egui-snarl = "0.7.1"

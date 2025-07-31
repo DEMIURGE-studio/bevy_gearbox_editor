@@ -4,7 +4,6 @@ use bevy::prelude::*;
 use bevy::reflect::Reflect;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::GearboxPlugin;
-use bevy_gearbox_editor::GearboxEditorPlugin;
 
 fn main() {
     App::new()
@@ -22,9 +21,7 @@ fn main() {
         .register_type::<Repeater>()
         .register_type::<TransitionListener<CastAbility>>()
         .register_type::<TransitionListener<OnComplete>>()
-        .add_plugins((
-            GearboxEditorPlugin::default(),
-        ))
+        .add_plugins(bevy_gearbox_editor::GearboxEditorPlugin)
         .run();
 }
 

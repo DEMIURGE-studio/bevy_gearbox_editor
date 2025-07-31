@@ -717,6 +717,8 @@ dependencies = [
  "bevy-inspector-egui",
  "bevy_egui",
  "bevy_gearbox",
+ "egui",
+ "egui-snarl",
 ]
 
 [[package]]
@@ -2093,6 +2095,16 @@ dependencies = [
  "epaint",
  "nohash-hasher",
  "profiling",
+]
+
+[[package]]
+name = "egui-snarl"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33f9d0444c82253d14d968342581af59d2519325381ea21d8e258c0af18a1422"
+dependencies = [
+ "egui",
+ "slab",
 ]
 
 [[package]]
