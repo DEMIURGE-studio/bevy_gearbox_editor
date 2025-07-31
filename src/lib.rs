@@ -1,9 +1,11 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use egui_snarl::{
-    ui::{PinInfo, SnarlStyle, SnarlViewer},
+    ui::{PinInfo, SnarlPin, SnarlStyle, SnarlViewer},
     InPin, InPinId, NodeId, OutPin, OutPinId, Snarl,
 };
+
+pub mod entity_ui;
 
 pub struct GearboxEditorPlugin;
 
@@ -136,7 +138,7 @@ impl SnarlViewer<GearboxNode> for GearboxViewer {
         ui: &mut egui::Ui,
         _scale: f32,
         snarl: &mut Snarl<GearboxNode>,
-    ) -> PinInfo {
+    ) -> impl SnarlPin + 'static {
         let node = &snarl[pin.id.node];
 
         match node {
@@ -158,7 +160,7 @@ impl SnarlViewer<GearboxNode> for GearboxViewer {
         ui: &mut egui::Ui,
         _scale: f32,
         snarl: &mut Snarl<GearboxNode>,
-    ) -> PinInfo {
+    ) -> impl SnarlPin + 'static {
         let node = &snarl[pin.id.node];
 
         match node {
