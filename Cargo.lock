@@ -715,10 +715,15 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy-inspector-egui",
+ "bevy_asset",
+ "bevy_ecs",
  "bevy_egui",
  "bevy_gearbox",
+ "bevy_reflect",
+ "disqualified",
  "egui",
  "egui-snarl",
+ "smallvec",
 ]
 
 [[package]]

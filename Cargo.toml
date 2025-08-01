@@ -9,7 +9,12 @@ rust-version = "1.81"
 [dependencies]
 bevy = "0.16.0"
 bevy-inspector-egui = "0.32.0"
+bevy_asset = "0.16.1"
+bevy_ecs = "0.16.0"
 bevy_egui = "0.35.1"
 bevy_gearbox = { path = "../bevy_gearbox" }
+bevy_reflect = "0.16.0"
+disqualified = "1.0.0"
 egui = "0.31.1"
 egui-snarl = "0.7.1"
+smallvec = "1.15.1"

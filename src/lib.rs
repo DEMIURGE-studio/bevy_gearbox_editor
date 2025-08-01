@@ -1,5 +1,7 @@
 use bevy::prelude::*;
+use bevy_ecs::system::SystemState;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
+use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use egui_snarl::{
     ui::{PinInfo, SnarlPin, SnarlStyle, SnarlViewer},
     InPin, InPinId, NodeId, OutPin, OutPinId, Snarl,
@@ -7,16 +9,15 @@ use egui_snarl::{
 use std::collections::VecDeque;
 
 pub mod entity_ui;
-
 pub struct GearboxEditorPlugin;
 
 impl Plugin for GearboxEditorPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(EguiPlugin::default())
+        app.add_plugins((EguiPlugin::default(), DefaultInspectorConfigPlugin))
             .insert_resource(NodeGraphState::default())
             .insert_resource(EntitySpawnQueue::default())
             .add_systems(Update, process_entity_spawn_requests)
-            .add_systems(EguiPrimaryContextPass, node_graph_ui_system);
+            .add_systems(EguiPrimaryContextPass, node_graph_ui_system_world);
     }
 }
 
@@ -57,6 +58,7 @@ fn process_entity_spawn_requests(
 pub struct NodeGraphState {
     pub snarl: Snarl<GearboxNode>,
     pub viewer: GearboxViewer,
+    pub selected_node: Option<NodeId>,
 }
 
 impl Default for NodeGraphState {
@@ -85,39 +87,182 @@ impl Default for NodeGraphState {
 
         Self {
             snarl,
-            viewer: GearboxViewer,
+            viewer: GearboxViewer {
+                pending_selection: None,
+                current_selection: None,
+            },
+            selected_node: None,
         }
     }
 }
 
-fn node_graph_ui_system(
-    mut contexts: EguiContexts,
-    mut graph_state: ResMut<NodeGraphState>,
-    mut spawn_queue: ResMut<EntitySpawnQueue>,
-) {
+fn node_graph_ui_system_world(world: &mut World) {
+    // Extract the necessary resources using a SystemState
+    let mut system_state: SystemState<(
+        EguiContexts,
+        ResMut<NodeGraphState>,
+        ResMut<EntitySpawnQueue>,
+    )> = SystemState::new(world);
+    
+    #[allow(unused_mut)]
+    let (mut contexts, mut graph_state, mut spawn_queue) = system_state.get_mut(world);
+
     if let Ok(ctx) = contexts.ctx_mut() {
+        // Check for nodes that need entity spawning
+        let nodes_to_check: Vec<(NodeId, GearboxNode)> = graph_state.snarl.node_ids().map(|(id, node)| (id, node.clone())).collect();
+        for (node_id, node) in nodes_to_check {
+            if let GearboxNode::Entity(entity_node) = &node {
+                if entity_node.needs_spawn {
+                    spawn_queue.request_spawn(node_id);
+                }
+            }
+        }
+        
+        let ctx = ctx.clone();
+        system_state.apply(world);
+        
+        // Now we can create RestrictedWorldView and use our custom UI
         egui::Window::new("Node Graph Editor")
             .default_size([800.0, 600.0])
-            .show(ctx, |ui| {
-                let NodeGraphState { snarl, viewer } = &mut *graph_state;
-                
-                // Check for nodes that need entity spawning
-                let nodes_to_check: Vec<(NodeId, GearboxNode)> = snarl.node_ids().map(|(id, node)| (id, node.clone())).collect();
-                for (node_id, node) in nodes_to_check {
-                    if let GearboxNode::Entity(entity_node) = &node {
-                        if entity_node.needs_spawn {
-                            spawn_queue.request_spawn(node_id);
-                        }
-                    }
-                }
-                
-                snarl.show(
-                    viewer,
-                    &SnarlStyle::new(),
-                    "gearbox_graph",
-                    ui,
-                );
+            .show(&ctx, |ui| {
+                show_node_graph_with_custom_ui(world, ui);
             });
+    }
+}
+
+fn show_node_graph_with_custom_ui(world: &mut World, ui: &mut egui::Ui) {
+    egui::SidePanel::right("entity_inspector")
+        .default_width(300.0)
+        .show_inside(ui, |ui| {
+            ui.heading("Entity Inspector");
+            show_entity_inspector_panel(world, ui);
+        });
+    
+    egui::CentralPanel::default().show_inside(ui, |ui| {
+        let mut graph_state = world.resource_mut::<NodeGraphState>();
+        let NodeGraphState { snarl, viewer, selected_node } = &mut *graph_state;
+        
+        // Sync the viewer's current selection with the resource
+        if viewer.current_selection != *selected_node {
+            println!("🔄 Syncing viewer selection: {:?} -> {:?}", viewer.current_selection, selected_node);
+        }
+        viewer.current_selection = *selected_node;
+        
+        snarl.show(
+            viewer,
+            &SnarlStyle::new(),
+            "gearbox_graph",
+            ui,
+        );
+        
+        // Check if there's a pending selection and update the selected node
+        if let Some(pending) = viewer.pending_selection.take() {
+            println!("✅ Processing pending selection: {:?} -> updating selected_node", pending);
+            *selected_node = Some(pending);
+            println!("📋 Selected node is now: {:?}", selected_node);
+        }
+        
+        // Also check snarl's built-in selection system (shift+drag selection)
+        let snarl_selected_nodes = Snarl::<GearboxNode>::get_selected_nodes_at("gearbox_graph", ui.id(), ui.ctx());
+        if !snarl_selected_nodes.is_empty() {
+            // Take the first selected entity node
+            for node_id in snarl_selected_nodes.iter() {
+                if let Some(node) = snarl.get_node(*node_id) {
+                    if let GearboxNode::Entity(_) = node {
+                        if *selected_node != Some(*node_id) {
+                            println!("🔍 Snarl selection detected: {:?} (shift+drag)", node_id);
+                            *selected_node = Some(*node_id);
+                        }
+                        break; // Only select the first entity node
+                    }
+                    
+                }
+            }
+        }
+    });
+}
+
+fn show_entity_inspector_panel(world: &mut World, ui: &mut egui::Ui) {
+    use bevy_inspector_egui::restricted_world_view::RestrictedWorldView;
+    use bevy_ecs::world::CommandQueue;
+    
+    // Get the selected entity from the selected node
+    let selected_entity = {
+        let graph_state = world.resource::<NodeGraphState>();
+        static mut LAST_SELECTION: Option<NodeId> = None;
+        let should_debug = unsafe { LAST_SELECTION != graph_state.selected_node };
+        
+        if should_debug {
+            println!("🔍 Inspector selection changed: {:?}", graph_state.selected_node);
+            unsafe { LAST_SELECTION = graph_state.selected_node; }
+        }
+        
+        match graph_state.selected_node {
+            Some(node_id) => {
+                if should_debug {
+                    println!("🔍 Found selected node_id: {:?}, looking up node...", node_id);
+                }
+                if let Some(GearboxNode::Entity(entity_node)) = graph_state.snarl.get_node(node_id) {
+                    if should_debug {
+                        println!("🔍 Found entity node: {:?}, needs_spawn: {}", entity_node.entity, entity_node.needs_spawn);
+                    }
+                    if !entity_node.needs_spawn {
+                        if should_debug {
+                            println!("✅ Entity ready for inspection: {:?}", entity_node.entity);
+                        }
+                        Some(entity_node.entity)
+                    } else {
+                        if should_debug {
+                            println!("⏳ Entity still spawning, can't inspect yet");
+                        }
+                        None
+                    }
+                } else {
+                    if should_debug {
+                        println!("❌ Selected node is not an entity node");
+                    }
+                    None
+                }
+            }
+            None => {
+                if should_debug {
+                    println!("❌ No node selected");
+                }
+                None
+            }
+        }
+    };
+    
+    match selected_entity {
+        Some(entity) => {
+            ui.heading(format!("Entity {:?}", entity));
+            ui.separator();
+            
+            // Show the entity with your custom UI
+            let type_registry = world.resource::<AppTypeRegistry>().0.clone();
+            let type_registry = type_registry.read();
+            let mut queue = CommandQueue::default();
+            
+            let mut world_view = RestrictedWorldView::new(world);
+            crate::entity_ui::ui_for_entity_components(
+                &mut world_view,
+                Some(&mut queue),
+                entity,
+                ui,
+                egui::Id::new(entity),
+                &type_registry,
+            );
+            
+            queue.apply(world);
+        }
+        None => {
+            ui.vertical_centered(|ui| {
+                ui.add_space(50.0);
+                ui.label("Select an entity node to inspect its components");
+                ui.add_space(20.0);
+                ui.weak("Click on an entity node in the graph to see its details here.");
+            });
+        }
     }
 }
 
@@ -165,7 +310,10 @@ impl EntityNode {
     }
 }
 
-pub struct GearboxViewer;
+pub struct GearboxViewer {
+    pub pending_selection: Option<NodeId>,
+    pub current_selection: Option<NodeId>,
+}
 
 impl SnarlViewer<GearboxNode> for GearboxViewer {
     fn title(&mut self, node: &GearboxNode) -> String {
@@ -250,13 +398,49 @@ impl SnarlViewer<GearboxNode> for GearboxViewer {
         _scale: f32,
         snarl: &mut Snarl<GearboxNode>,
     ) {
+        // Check if this node is selected and add visual feedback
+        let is_selected = self.current_selection == Some(node);
+        
+        if is_selected {
+            println!("🎨 Node {:?} is selected, applying visual feedback", node);
+            // Add a simple colored background for selected nodes
+            let style = ui.style_mut();
+            style.visuals.panel_fill = egui::Color32::from_rgba_premultiplied(100, 150, 255, 50);
+        }
+        
+        // Debug available size (only for first few frames to avoid spam)
+        static mut DEBUG_COUNTER: u32 = 0;
+        unsafe {
+            if DEBUG_COUNTER < 5 {
+                let available_size = ui.available_size();
+                println!("🔧 Node {:?} available size: {:?}", node, available_size);
+                DEBUG_COUNTER += 1;
+            }
+        }
+        
         match &mut snarl[node] {
             GearboxNode::Entity(entity_node) => {
                 ui.text_edit_singleline(&mut entity_node.name);
-                if entity_node.needs_spawn {
-                    ui.label("Entity: (Spawning...)");
+                
+                // Create a clickable label instead of just a regular label
+                let entity_label = if entity_node.needs_spawn {
+                    "Entity: (Spawning...)".to_string()
                 } else {
-                    ui.label(format!("Entity: {:?}", entity_node.entity));
+                    format!("Entity: {:?}", entity_node.entity)
+                };
+                
+                let label_response = ui.selectable_label(is_selected, entity_label);
+                if label_response.clicked() {
+                    println!("🖱️  Node {:?} entity label clicked! Setting pending selection.", node);
+                    self.pending_selection = Some(node);
+                }
+                
+                // Add a small indicator for entity nodes
+                if is_selected {
+                    ui.horizontal(|ui| {
+                        ui.small("📋");
+                        ui.small("Selected for inspection");
+                    });
                 }
             }
             GearboxNode::StateTransition(transition) => {
@@ -265,9 +449,23 @@ impl SnarlViewer<GearboxNode> for GearboxViewer {
                     ui.label("→");
                     ui.text_edit_singleline(&mut transition.to_state);
                 });
+                
+                // Add a clickable area for non-entity nodes too
+                let response = ui.allocate_response([100.0, 20.0].into(), egui::Sense::click());
+                if response.clicked() {
+                    println!("🖱️  Node {:?} (StateTransition) clicked! Setting pending selection.", node);
+                    self.pending_selection = Some(node);
+                }
             }
             GearboxNode::EventTrigger(event) => {
                 ui.text_edit_singleline(&mut event.event_name);
+                
+                // Add a clickable area for non-entity nodes too
+                let response = ui.allocate_response([100.0, 20.0].into(), egui::Sense::click());
+                if response.clicked() {
+                    println!("🖱️  Node {:?} (EventTrigger) clicked! Setting pending selection.", node);
+                    self.pending_selection = Some(node);
+                }
             }
         }
     }

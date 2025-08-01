@@ -88,12 +88,6 @@ fn input_system(
         println!("\n--- 'C' Pressed: Sending CastAbility event! ---");
         commands.trigger_targets(CastAbility, machine);
     }
-
-    // Press 'C' to cast or reset the ability.
-    if keyboard_input.just_pressed(KeyCode::KeyI) {
-        println!("\n--- 'I' Pressed: Sending InitializeMachine event! ---");
-        commands.trigger_targets(InitializeMachine, machine);
-    }
 }
 
 /// The core logic for the repeater. Ticks the timer and fires "projectiles".
