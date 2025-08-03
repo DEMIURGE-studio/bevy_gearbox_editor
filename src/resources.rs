@@ -46,3 +46,14 @@ pub struct TransitionCreationState {
 pub struct SelectedEntity {
     pub entity: Option<Entity>,
 }
+
+/// Resource to track drag-and-drop state for parent-child zone interactions
+#[derive(Resource, Default)]
+pub struct DragDropState {
+    /// The entity currently being dragged (if any)
+    pub dragging_entity: Option<Entity>,
+    /// The parent zone currently being hovered over during drag (if any)
+    pub hover_zone_entity: Option<Entity>,
+    /// Whether the current drag would result in a valid parent-child relationship
+    pub would_create_child_relationship: bool,
+}

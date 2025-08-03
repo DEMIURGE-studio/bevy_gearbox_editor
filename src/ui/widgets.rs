@@ -282,6 +282,124 @@ impl Widget for NodeBody {
     }
 }
 
+/// Widget for parent nodes with initial state connection
+pub struct ParentNodeBody {
+    pub entity: Entity,
+    pub display_name: String,
+    pub initial_state_target: Option<Entity>,
+}
+
+impl ParentNodeBody {
+    pub fn new(entity: Entity, display_name: String, initial_state_target: Option<Entity>) -> Self {
+        Self {
+            entity,
+            display_name,
+            initial_state_target,
+        }
+    }
+    
+    /// Show this widget and return comprehensive interaction data
+    pub fn show(self, ui: &mut Ui, _world: &mut World) -> NodeWidgetResponse {
+        let mut input_pin_pos = None;
+        let mut output_pin_positions = Vec::new();
+        
+        // Fixed width for parent nodes (same as leaf nodes for consistency)
+        let target_width: f32 = 200.0;
+        
+        let response = ui.allocate_ui_with_layout(
+            egui::Vec2::new(target_width, 0.0), // Fixed width, auto height
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                // 1. Header with blue input pin
+                let (header_response, header_input_pin_pos) = NodeHeader::new(
+                    self.entity, 
+                    self.display_name
+                ).show(ui);
+                
+                input_pin_pos = header_input_pin_pos;
+                
+                // 2. Initial state connection pin (red, on the left)
+                if self.initial_state_target.is_some() {
+                    let (_, initial_pin_pos) = render_initial_state_pin(ui, self.entity);
+                    if let Some(pos) = initial_pin_pos {
+                        // Use a special index (-1) to distinguish initial state pin from regular transitions
+                        output_pin_positions.push(((self.entity, usize::MAX), pos));
+                    }
+                }
+                
+                header_response // Return header response for drag/click handling
+            }
+        );
+        
+        let mut widget_response = NodeWidgetResponse::new(response.inner);
+        widget_response.input_pin_pos = input_pin_pos;
+        widget_response.output_pin_positions = output_pin_positions;
+        widget_response
+    }
+    
+
+}
+
+impl Widget for ParentNodeBody {
+    fn ui(self, ui: &mut Ui) -> Response {
+        // For the Widget trait, we can't access world, so return a simple response
+        ui.vertical(|ui| {
+            ui.add(NodeHeader::new(self.entity, self.display_name));
+            if self.initial_state_target.is_some() {
+                ui.horizontal(|ui| {
+                    // Simple red circle for initial state in Widget mode
+                    let pin_radius = 6.0;
+                    let response = ui.allocate_response(
+                        EguiVec2::new(pin_radius * 2.0, pin_radius * 2.0), 
+                        Sense::hover()
+                    );
+                    ui.painter().circle_filled(
+                        response.rect.center(),
+                        pin_radius,
+                        Color32::from_rgb(255, 100, 100),
+                    );
+                    ui.label("Initial State");
+                });
+            }
+        }).response
+    }
+}
+
+/// Render the initial state connection pin (red pin on the left) as a standalone function
+fn render_initial_state_pin(ui: &mut Ui, entity: Entity) -> (Response, Option<Pos2>) {
+    let mut pin_pos = None;
+    
+    let response = ui.allocate_ui_with_layout(
+        EguiVec2::new(ui.available_width(), 25.0),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            // Red initial state pin on the left
+            let pin_radius = 6.0;
+            let response = ui.allocate_response(
+                EguiVec2::new(pin_radius * 2.0, pin_radius * 2.0), 
+                Sense::hover()
+            );
+            let pin_center = response.rect.center();
+            
+            ui.painter().circle_filled(
+                pin_center,
+                pin_radius,
+                Color32::from_rgb(255, 100, 100), // Red for initial state
+            );
+            
+            pin_pos = Some(pin_center);
+            
+            // Label for the initial state pin
+            ui.allocate_space(EguiVec2::new(12.0, 0.0)); // Space after pin
+            ui.label(format!("Initial"));
+            
+            response
+        }
+    ).response;
+    
+    (response, pin_pos)
+}
+
 /// Separate inspector panel widget for showing details of the selected entity
 pub struct EntityInspectorPanel {
     pub selected_entity: Option<Entity>,
@@ -366,3 +484,4 @@ impl Widget for EntityInspectorPanel {
         }).response
     }
 }
+

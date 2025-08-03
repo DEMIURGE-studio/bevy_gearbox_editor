@@ -137,6 +137,7 @@ pub struct UiResources {
     pub dialog_state: ComponentDialogState,
     pub transition_state: TransitionCreationState,
     pub selected_entity: SelectedEntity,
+    pub drag_drop_state: DragDropState,
 }
 
 impl UiResources {
@@ -148,6 +149,7 @@ impl UiResources {
             dialog_state: world.remove_resource::<ComponentDialogState>().unwrap_or_default(),
             transition_state: world.remove_resource::<TransitionCreationState>().unwrap_or_default(),
             selected_entity: world.remove_resource::<SelectedEntity>().unwrap_or_default(),
+            drag_drop_state: world.remove_resource::<DragDropState>().unwrap_or_default(),
         }
     }
     
@@ -158,6 +160,7 @@ impl UiResources {
         world.insert_resource(self.dialog_state);
         world.insert_resource(self.transition_state);
         world.insert_resource(self.selected_entity);
+        world.insert_resource(self.drag_drop_state);
     }
 }
 

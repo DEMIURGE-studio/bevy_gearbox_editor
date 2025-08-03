@@ -38,6 +38,19 @@ pub fn auto_discover_connections(
             });
         }
         
+        // Check if this entity has Children (is a parent node) and needs an initial state pin
+        if entity_ref.contains::<Children>() {
+            // Check if we already have an initial state output pin
+            if !pins.iter().any(|p| p.pin_type == PinType::Output && p.label == "InitialState") {
+                pins.push(NodePin {
+                    pin_type: PinType::Output,
+                    pin_index: usize::MAX, // Special index for initial state pin
+                    label: "InitialState".to_string(),
+                });
+                println!("🔌 Created initial state output pin for parent entity {:?}", entity);
+            }
+        }
+        
         // Look for TransitionListener components using reflection
         let archetype = entity_ref.archetype();
         let mut output_pin_index = 0;
@@ -71,7 +84,7 @@ pub fn auto_discover_connections(
         // Update the NodePins component
         commands.entity(entity).insert(NodePins { pins: pins.clone() });
         
-        // Now create connections based on TransitionListener targets
+        // Create connections based on TransitionListener targets
         create_connections_from_transition_listeners(
             &mut commands,
             entity,
@@ -79,6 +92,15 @@ pub fn auto_discover_connections(
             &existing_connections,
             &registry,
             &pins,
+            world
+        );
+        
+        // Create connections for initial state pins (if this is a parent entity)
+        create_initial_state_connections(
+            &mut commands,
+            entity,
+            entity_ref,
+            &existing_connections,
             world
         );
     }
@@ -162,5 +184,74 @@ fn create_connections_from_transition_listeners(
                 }
             }
         }
+    }
+}
+
+/// Create connections for initial state pins from parent entities to their initial state targets
+fn create_initial_state_connections(
+    commands: &mut Commands,
+    entity: Entity,
+    entity_ref: bevy::ecs::world::EntityRef,
+    existing_connections: &Query<&Connection>,
+    _world: &World,
+) {
+    // Only process entities with Children (parent entities)
+    if !entity_ref.contains::<Children>() {
+        return;
+    }
+
+    // Try to get the InitialState component directly from the entity reference
+    let Some(initial_state) = entity_ref.get::<bevy_gearbox::InitialState>() else {
+        return; // No InitialState component, nothing to connect
+    };
+
+    let target_entity = initial_state.0; // InitialState is a tuple struct with Entity at index 0
+    
+    // Check if connection already exists
+    let connection_exists = existing_connections.iter().any(|conn| {
+        conn.from_entity == entity && 
+        conn.to_entity == target_entity &&
+        conn.connection_type == "InitialState"
+    });
+    
+    if !connection_exists {
+        // Create the initial state connection
+        let connection = Connection {
+            from_entity: entity,
+            to_entity: target_entity,
+            from_pin_index: usize::MAX, // Special index for initial state pin
+            to_pin_index: 0, // Input pin is always index 0
+            connection_type: "InitialState".to_string(),
+        };
+        
+        commands.spawn(connection);
+        println!("🔗 Created initial state connection from {:?} to {:?}", entity, target_entity);
+    }
+}
+
+/// Automatically add ParentZone components to entities with Children but no ParentZone
+pub fn manage_parent_zones(
+    mut commands: Commands,
+    // Entities with Children but no ParentZone
+    parent_entities: Query<(Entity, &GraphNode), (With<Children>, Without<ParentZone>)>,
+    // Entities with ParentZone but no Children (orphaned zones)
+    orphaned_zones: Query<Entity, (With<ParentZone>, Without<Children>)>,
+) {
+    // Add ParentZone to entities that have Children but no zone
+    for (entity, _graph_node) in parent_entities.iter() {
+        let default_zone = ParentZone {
+            bounds: bevy::math::Rect::new(0.0, 0.0, 400.0, 300.0), // Default zone size
+            resize_handles: [bevy::math::Rect::default(); 4],
+            min_size: Vec2::new(200.0, 150.0),
+        };
+        
+        commands.entity(entity).insert(default_zone);
+        println!("🏗️ Added ParentZone to entity {:?} (has Children)", entity);
+    }
+    
+    // Remove ParentZone from entities that no longer have Children
+    for entity in orphaned_zones.iter() {
+        commands.entity(entity).remove::<ParentZone>();
+        println!("🗑️ Removed ParentZone from entity {:?} (no longer has Children)", entity);
     }
 }

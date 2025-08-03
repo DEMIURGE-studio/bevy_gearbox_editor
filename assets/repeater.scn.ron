@@ -65,12 +65,6 @@
         "bevy_ecs::name::Name": "AbilityStateMachine",
         "bevy_gearbox::CurrentState": ([]),
         "bevy_gearbox::InitialState": (4294967296),
-        "bevy_gearbox::transition_listener::TransitionListener<bevy_gearbox::InitializeMachine>": (
-          connection: (
-            target: 4294967296,
-            guards: None,
-          ),
-        ),
         "repeater::AbilityMachine": (),
         "bevy_gearbox::StateMachineRoot": (),
         "bevy_gearbox_editor::components::EntityNode": (),

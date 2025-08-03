@@ -39,9 +39,14 @@ impl Plugin for GearboxEditorPlugin {
            .register_type::<NodePin>()
            .register_type::<PinType>()
            .register_type::<Connection>()
-           // Add systems
-           .add_systems(Startup, setup_graph_canvas)  
-           .add_systems(Update, auto_discover_connections)
+                       // Register parent-child zone system types
+            .register_type::<ParentZone>()
+            .register_type::<InitialStatePointer>()
+            // Initialize drag-drop state resource
+            .init_resource::<DragDropState>()
+                       // Add systems
+            .add_systems(Startup, setup_graph_canvas)  
+            .add_systems(Update, (auto_discover_connections, manage_parent_zones))
            .add_systems(EguiPrimaryContextPass, render_graph_nodes_system);
     }
 }
