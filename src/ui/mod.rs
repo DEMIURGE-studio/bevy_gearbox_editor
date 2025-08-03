@@ -1,6 +1,7 @@
 pub mod node_renderer;
 pub mod dialogs;
 pub mod connections;
+pub mod widgets;
 
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContext, PrimaryEguiContext};
@@ -167,3 +168,6 @@ impl UiResources {
         world.insert_resource(self.selected_entity);
     }
 }
+
+
+

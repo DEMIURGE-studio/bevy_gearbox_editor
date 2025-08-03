@@ -13,7 +13,8 @@ pub mod utils;
 pub use components::*;
 pub use resources::*;
 pub use systems::*;
-pub use ui::render_graph_nodes_system;
+
+use crate::ui::render_graph_nodes_system;
 
 pub struct GearboxEditorPlugin;
 

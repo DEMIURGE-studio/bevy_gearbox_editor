@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 use bevy_egui::egui;
-use bevy_inspector_egui::bevy_inspector;
 use crate::components::*;
 use crate::resources::*;
 use super::UiResources;
+use super::widgets::NodeBody;
 
 pub struct NodeRenderer;
 
@@ -162,9 +162,19 @@ impl NodeRenderer {
         }
     }
 
-    // Note: handle_button_interactions() removed - buttons now handle clicks directly in render_node_content
+    /// Collect transition data from the entity for widget rendering
+    fn collect_transitions(&self, entity: Entity, world: &World) -> Vec<(String, usize)> {
+        let Ok(entity_ref) = world.get_entity(entity) else { return Vec::new(); };
+        let Some(node_pins) = entity_ref.get::<NodePins>() else { return Vec::new(); };
+        
+        node_pins.pins.iter()
+            .enumerate()
+            .filter(|(_, pin)| pin.pin_type == PinType::Output)
+            .map(|(index, pin)| (pin.label.clone(), index))
+            .collect()
+    }
 
-    /// Draw the visual representation of a node using natural egui sizing
+    /// Draw the visual representation of a node using widget-based architecture
     fn draw_node_visual_only(
         &self,
         ui: &mut egui::Ui,
@@ -177,11 +187,14 @@ impl NodeRenderer {
     ) -> Option<bool> {
         let display_name = display_name
             .as_deref()
-            .unwrap_or("Unnamed Entity");
+            .unwrap_or("Unnamed Entity")
+            .to_string();
         
         // Position for the node
         let pos = egui::Pos2::new(position.x, position.y);
-        let mut expansion_changed = None;
+        
+        // Collect transition data from the entity
+        let transitions = self.collect_transitions(entity, world);
         
         // Create a custom frame with the node's background color
         let fill_color = self.get_node_fill_color(entity, &ui_resources.transition_state);
@@ -191,17 +204,28 @@ impl NodeRenderer {
             .inner_margin(8.0);
         
         // Use allocate_new_ui with a reasonable starting size, allowing natural growth
-        let max_rect = egui::Rect::from_min_size(pos, egui::Vec2::new(200.0, 400.0)); // Generous space
+        let max_rect = egui::Rect::from_min_size(pos, egui::Vec2::new(200.0, 400.0));
         let ui_response = ui.allocate_new_ui(egui::UiBuilder::new().max_rect(max_rect), |ui| {
             // Use the frame to provide background and let it size automatically to content
             let frame_response = frame.show(ui, |ui| {
-                // NO width constraints - let content determine natural size!
-                self.render_node_content(
-                    ui, entity, expanded, display_name, world, 
-                    &mut ui_resources.pin_cache, &mut expansion_changed
-                );
+                // Use the NodeBody widget - it handles all layout naturally!
+                let widget_response = NodeBody::new(
+                    entity,
+                    display_name,
+                    expanded,
+                    transitions,
+                ).show(ui, world);
                 
-                expansion_changed
+                // Update pin caches with widget data
+                if let Some(input_pos) = widget_response.input_pin_pos {
+                    ui_resources.pin_cache.input_pins.insert(entity, input_pos);
+                }
+                
+                for ((pin_entity, pin_index), pin_pos) in widget_response.output_pin_positions {
+                    ui_resources.pin_cache.output_pins.insert((pin_entity, pin_index), pin_pos);
+                }
+                
+                widget_response.expansion_changed
             });
             
             // Store the actual measured size for interactions
@@ -227,142 +251,5 @@ impl NodeRenderer {
         }
     }
 
-    /// Render the actual content of a node
-    fn render_node_content(
-        &self,
-        ui: &mut egui::Ui,
-        entity: Entity,
-        expanded: bool,
-        display_name: &str,
-        world: &mut World,
-        pin_cache: &mut PinPositionCache,
-        expansion_changed: &mut Option<bool>,
-    ) {
-        // NO width constraints at all - let content naturally size itself!
-        
-        // === HEADER (always visible) ===
-        self.render_header(ui, entity, display_name, expanded, pin_cache, expansion_changed);
-        
-        ui.separator();
-        
-        // === BODY ===
-        self.render_output_pins(ui, entity, world, pin_cache);
-        
-        if expanded {
-            ui.separator();
-            self.render_inspector(ui, world, entity);
-            ui.separator();
-            self.render_action_buttons(ui, entity, expansion_changed);
-        }
-    }
-
-    /// Render the node header with input pin and expand button
-    fn render_header(
-        &self,
-        ui: &mut egui::Ui,
-        entity: Entity,
-        display_name: &str,
-        expanded: bool,
-        pin_cache: &mut PinPositionCache,
-        expansion_changed: &mut Option<bool>,
-    ) {
-        // Make header fill the full available width
-        ui.allocate_ui_with_layout(
-            egui::Vec2::new(ui.available_width(), 0.0), 
-            egui::Layout::left_to_right(egui::Align::Center), 
-            |ui| {
-                // Draw input pin in header
-                let pin_radius = 6.0;
-                let pin_pos = ui.cursor().min + egui::Vec2::new(6.0, 12.0);
-                ui.painter().circle_filled(
-                    pin_pos,
-                    pin_radius,
-                    egui::Color32::from_rgb(100, 150, 255), // Blue for input
-                );
-                pin_cache.input_pins.insert(entity, pin_pos);
-                
-                ui.allocate_space(egui::Vec2::new(12.0, 12.0)); // Space for input pin
-                
-                // Entity name and ID in the center
-                ui.vertical(|ui| {
-                    ui.strong(display_name);
-                    ui.small(format!("Entity: {:?}", entity));
-                });
-                
-                // Push expand toggle to the right - now will work correctly!
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let expand_text = if expanded { "▼" } else { "▶" };
-                    let expand_response = ui.small_button(expand_text);
-                    if expand_response.clicked() {
-                        println!("🔽 Visual pass: Toggled expansion for {:?}: {} -> {}", entity, expanded, !expanded);
-                        *expansion_changed = Some(!expanded);
-                    }
-                });
-            }
-        );
-    }
-
-    /// Render output pins section
-    fn render_output_pins(&self, ui: &mut egui::Ui, entity: Entity, world: &World, pin_cache: &mut PinPositionCache) {
-        let Ok(entity_ref) = world.get_entity(entity) else { return; };
-        let Some(node_pins) = entity_ref.get::<NodePins>() else { return; };
-        
-        let pin_radius = 6.0;
-        
-        // Draw output pins vertically
-        let output_pins: Vec<_> = node_pins.pins.iter()
-            .enumerate()
-            .filter(|(_, pin)| pin.pin_type == PinType::Output)
-            .collect();
-        
-        if !output_pins.is_empty() {
-            ui.label("Transitions:");
-            
-            for (original_pin_index, pin) in output_pins.iter() {
-                // Make each pin row fill the full available width
-                ui.allocate_ui_with_layout(
-                    egui::Vec2::new(ui.available_width(), 0.0), 
-                    egui::Layout::left_to_right(egui::Align::Center), 
-                    |ui| {
-                        // Draw pin label first
-                        ui.label(&pin.label);
-                        
-                        // Push the pin to the right side - now will work correctly!
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            // Draw red output pin circle on the right
-                            let response = ui.allocate_response(egui::Vec2::new(pin_radius * 2.0, pin_radius * 2.0), egui::Sense::hover());
-                            let pin_center = response.rect.center();
-                            
-                            ui.painter().circle_filled(
-                                pin_center,
-                                pin_radius,
-                                egui::Color32::from_rgb(255, 100, 100), // Red for output
-                            );
-                            
-                            // Store the actual pin position using the original index from the full pins array
-                            pin_cache.output_pins.insert((entity, *original_pin_index), pin_center);
-                        });
-                    }
-                );
-            }
-        }
-    }
-
-    /// Render the inspector UI for expanded nodes
-    fn render_inspector(&self, ui: &mut egui::Ui, world: &mut World, entity: Entity) {
-        let inspector_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            bevy_inspector::ui_for_entity(world, entity, ui);
-        }));
-        
-        if inspector_result.is_err() {
-            ui.label("⚠️ Inspector UI unavailable for this entity");
-        }
-    }
-
-    /// Render action buttons (currently visual only - will be enhanced later)
-    fn render_action_buttons(&self, ui: &mut egui::Ui, _entity: Entity, _expansion_changed: &mut Option<bool>) {
-        // TODO: Connect these buttons to dialog states in a future iteration
-        let _ = ui.button("+ Add Component");
-        let _ = ui.button("+ Add Transition Listener");
-    }
+    // Note: Old rendering methods removed - now handled by widgets in widgets.rs
 }
