@@ -27,7 +27,7 @@ impl ConnectionRenderer {
         
         // Draw each connection
         for connection in connections {
-            self.draw_connection_line(ui, &connection, &node_positions, &node_pins, size_cache, pin_cache);
+            self.draw_connection_line(ui, &connection, &node_positions, size_cache, pin_cache);
         }
     }
 
@@ -52,7 +52,6 @@ impl ConnectionRenderer {
         ui: &mut egui::Ui,
         connection: &Connection,
         node_positions: &HashMap<Entity, Vec2>,
-        node_pins: &HashMap<Entity, NodePins>,
         size_cache: &NodeSizeCache,
         pin_cache: &PinPositionCache,
     ) {
@@ -68,11 +67,8 @@ impl ConnectionRenderer {
                 let Some(from_node_pos) = node_positions.get(&connection.from_entity) else { return; };
                 let Some(to_node_pos) = node_positions.get(&connection.to_entity) else { return; };
                 
-                let from_pins = node_pins.get(&connection.from_entity);
-                let to_pins = node_pins.get(&connection.to_entity);
-                
-                let from_calc = self.calculate_output_pin_position(*from_node_pos, connection.from_pin_index, from_pins, connection.from_entity, size_cache);
-                let to_calc = self.calculate_input_pin_position(*to_node_pos, connection.to_pin_index, to_pins, connection.to_entity, size_cache);
+                let from_calc = self.calculate_output_pin_position(*from_node_pos, connection.from_pin_index, connection.from_entity, size_cache);
+                let to_calc = self.calculate_input_pin_position(*to_node_pos);
                 (from_calc, to_calc)
             }
         };
@@ -86,7 +82,6 @@ impl ConnectionRenderer {
         &self,
         node_pos: Vec2, 
         pin_index: usize, 
-        _pins: Option<&NodePins>, 
         entity: Entity, 
         size_cache: &NodeSizeCache
     ) -> egui::Pos2 {
@@ -113,10 +108,6 @@ impl ConnectionRenderer {
     fn calculate_input_pin_position(
         &self,
         node_pos: Vec2, 
-        _pin_index: usize, 
-        _pins: Option<&NodePins>, 
-        _entity: Entity, 
-        _size_cache: &NodeSizeCache
     ) -> egui::Pos2 {
         // Input pin is in the header, left side
         egui::Pos2::new(

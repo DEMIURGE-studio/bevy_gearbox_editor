@@ -117,7 +117,7 @@ impl NodeRenderer {
             new_position.y += delta.y;
             
             // Update zone hover state during drag
-            self.update_zone_hover_state(ui, entity, new_position, world, ui_resources);
+            self.update_zone_hover_state(entity, new_position, world, ui_resources);
         }
         
         // Handle drag end
@@ -125,7 +125,7 @@ impl NodeRenderer {
             println!("🖱️ Stopped dragging entity {:?}", entity);
             
             // Apply parent-child relationship changes based on final position
-            self.apply_drag_drop_changes(entity, new_position, world, ui_resources);
+            self.apply_drag_drop_changes(entity, world, ui_resources);
             
             // Clear drag state
             ui_resources.drag_drop_state.dragging_entity = None;
@@ -356,17 +356,16 @@ impl NodeRenderer {
     /// Update zone hover state during drag operations
     fn update_zone_hover_state(
         &self,
-        _ui: &mut egui::Ui,
         dragging_entity: Entity,
         drag_position: Vec2,
         world: &mut World,
         ui_resources: &mut UiResources,
     ) {
         // Get all parent entities (entities with Children component)
-        let mut parent_zones_query = world.query::<(Entity, &GraphNode, &ParentZone, &Children)>();
+        let mut parent_zones_query = world.query::<(Entity, &GraphNode, &ParentZone)>();
         let parent_zones: Vec<_> = parent_zones_query
             .iter(world)
-            .map(|(entity, graph_node, parent_zone, _children)| (entity, graph_node.position, parent_zone.bounds))
+            .map(|(entity, graph_node, parent_zone)| (entity, graph_node.position, parent_zone.bounds))
             .collect();
         
         let mut hover_zone_entity = None;
@@ -411,7 +410,6 @@ impl NodeRenderer {
     fn apply_drag_drop_changes(
         &self,
         dragging_entity: Entity,
-        _final_position: Vec2,
         world: &mut World,
         ui_resources: &UiResources,
     ) {
