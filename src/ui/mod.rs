@@ -11,6 +11,7 @@ use crate::resources::*;
 use node_renderer::NodeRenderer;
 use dialogs::{ComponentDialog, TransitionDialog};
 use connections::ConnectionRenderer;
+use widgets::EntityInspectorPanel;
 
 /// Main UI rendering system - coordinates all UI elements
 pub fn render_graph_nodes_system(world: &mut World) {
@@ -27,6 +28,7 @@ pub fn render_graph_nodes_system(world: &mut World) {
     // Extract resources for UI rendering
     let mut ui_resources = UiResources::extract_from_world(world);
 
+    // Main node graph window
     egui::Window::new("Node Graph")
         .default_size([800.0, 600.0])
         .show(egui_context.get_mut(), |ui| {
@@ -42,6 +44,14 @@ pub fn render_graph_nodes_system(world: &mut World) {
             // Render dialogs
             ComponentDialog::render(ui, world, &mut ui_resources.dialog_state);
             TransitionDialog::render(ui, world, &mut ui_resources.transition_state);
+        });
+    
+    // Separate inspector panel window
+    egui::Window::new("Entity Inspector")
+        .default_size([400.0, 600.0])
+        .show(egui_context.get_mut(), |ui| {
+            EntityInspectorPanel::new(ui_resources.selected_entity.entity)
+                .show(ui, world, &mut ui_resources.dialog_state, &mut ui_resources.transition_state);
         });
     
     // Restore resources to the world
@@ -61,12 +71,12 @@ fn render_graph_content(
     let node_data = collect_node_data(world);
     
     // PASS 1: Handle ALL input events (no visual rendering)
-    let (drag_changes, expansion_changes) = node_renderer.handle_interactions(
+    let drag_changes = node_renderer.handle_interactions(
         ui, world, &node_data, ui_resources
     );
     
     // PASS 2: Visual-only rendering of unselected nodes
-    let additional_expansions = node_renderer.render_unselected_nodes(
+    node_renderer.render_unselected_nodes(
         ui, world, &node_data, ui_resources
     );
     
@@ -74,12 +84,12 @@ fn render_graph_content(
     connection_renderer.render_connections(ui, world, &ui_resources.size_cache, &ui_resources.pin_cache);
     
     // PASS 4: Visual-only rendering of selected node (on top of connections)
-    let selected_expansions = node_renderer.render_selected_node(
+    node_renderer.render_selected_node(
         ui, world, &node_data, ui_resources
     );
     
-    // Apply all changes back to components
-    apply_node_changes(world, drag_changes, expansion_changes, additional_expansions, selected_expansions, ui_resources);
+    // Apply position changes back to components
+    apply_node_changes(world, drag_changes, ui_resources);
 }
 
 /// Collects node data for rendering
@@ -91,13 +101,10 @@ fn collect_node_data(world: &mut World) -> Vec<(Entity, Vec2, bool, Option<Strin
     }).collect()
 }
 
-/// Applies position, expansion, and size changes back to components
+/// Applies position and size changes back to components
 fn apply_node_changes(
     world: &mut World,
     drag_changes: Vec<(Entity, Vec2)>,
-    expansion_changes: Vec<(Entity, bool)>,
-    additional_expansions: Vec<(Entity, bool)>,
-    selected_expansions: Vec<(Entity, bool)>,
     ui_resources: &UiResources,
 ) {
     let mut nodes_query = world.query::<&mut GraphNode>();
@@ -106,21 +113,6 @@ fn apply_node_changes(
     for (entity, new_pos) in drag_changes {
         if let Ok(mut graph_node) = nodes_query.get_mut(world, entity) {
             graph_node.position = new_pos;
-        }
-    }
-    
-    // Apply expansion changes from all sources
-    let all_expansion_changes = expansion_changes
-        .into_iter()
-        .chain(additional_expansions)
-        .chain(selected_expansions);
-        
-    for (entity, new_expanded) in all_expansion_changes {
-        if let Ok(mut graph_node) = nodes_query.get_mut(world, entity) {
-            if graph_node.expanded != new_expanded {
-                println!("🔽 Updating expansion for {:?}: {} -> {}", entity, graph_node.expanded, new_expanded);
-                graph_node.expanded = new_expanded;
-            }
         }
     }
     
@@ -168,6 +160,8 @@ impl UiResources {
         world.insert_resource(self.selected_entity);
     }
 }
+
+
 
 
 

@@ -5,7 +5,6 @@ use bevy_inspector_egui::bevy_inspector;
 /// Response data from node widgets containing interaction and position info
 pub struct NodeWidgetResponse {
     pub response: Response,
-    pub expansion_changed: Option<bool>,
     pub input_pin_pos: Option<Pos2>,
     pub output_pin_positions: Vec<((Entity, usize), Pos2)>,
 }
@@ -14,7 +13,6 @@ impl NodeWidgetResponse {
     pub fn new(response: Response) -> Self {
         Self {
             response,
-            expansion_changed: None,
             input_pin_pos: None,
             output_pin_positions: Vec::new(),
         }
@@ -79,25 +77,22 @@ impl Widget for TransitionWidget {
     }
 }
 
-/// Widget for the node header with input pin, name, and expand button
+/// Widget for the node header with input pin and name
 pub struct NodeHeader {
     pub entity: Entity,
     pub display_name: String,
-    pub expanded: bool,
 }
 
 impl NodeHeader {
-    pub fn new(entity: Entity, display_name: String, expanded: bool) -> Self {
+    pub fn new(entity: Entity, display_name: String) -> Self {
         Self {
             entity,
             display_name,
-            expanded,
         }
     }
     
-    /// Show this widget and return expansion state and pin position
-    pub fn show(self, ui: &mut Ui) -> (Response, Option<bool>, Option<Pos2>) {
-        let mut expansion_changed = None;
+    /// Show this widget and return pin position
+    pub fn show(self, ui: &mut Ui) -> (Response, Option<Pos2>) {
         let mut input_pin_pos = None;
         
         let response = ui.allocate_ui_with_layout(
@@ -116,26 +111,15 @@ impl NodeHeader {
                 
                 ui.allocate_space(EguiVec2::new(12.0, 0.0)); // Space for pin
                 
-                // Entity name and ID
+                // Entity name and ID - centered content
                 ui.vertical(|ui| {
                     ui.strong(&self.display_name);
                     ui.small(format!("Entity: {:?}", self.entity));
                 });
-                
-                // Expand/collapse button on the right - use right-to-left layout to auto-align
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let expand_text = if self.expanded { "▼" } else { "▶" };
-                    let button_response = ui.small_button(expand_text);
-                    if button_response.clicked() {
-                        expansion_changed = Some(!self.expanded);
-                        println!("🔽 Widget: Toggled expansion for {:?}: {} -> {}", self.entity, self.expanded, !self.expanded);
-                    }
-                    button_response
-                })
             }
         ).response;
         
-        (response, expansion_changed, input_pin_pos)
+        (response, input_pin_pos)
     }
 }
 
@@ -234,67 +218,39 @@ impl Widget for EntityComponents {
 pub struct NodeBody {
     pub entity: Entity,
     pub display_name: String,
-    pub expanded: bool,
     pub transitions: Vec<(String, usize)>,
 }
 
 impl NodeBody {
-    pub fn new(entity: Entity, display_name: String, expanded: bool, transitions: Vec<(String, usize)>) -> Self {
+    pub fn new(entity: Entity, display_name: String, transitions: Vec<(String, usize)>) -> Self {
         Self {
             entity,
             display_name,
-            expanded,
             transitions,
         }
     }
     
     /// Show this widget and return comprehensive interaction data
-    pub fn show(self, ui: &mut Ui, world: &mut World) -> NodeWidgetResponse {
-        let mut expansion_changed = None;
+    pub fn show(self, ui: &mut Ui, _world: &mut World) -> NodeWidgetResponse {
         let mut input_pin_pos = None;
         let mut output_pin_positions = Vec::new();
         
-        // Strategy: Use allocate_ui to control exact width, let height grow naturally
-        // First determine the minimum width needed
-        let mut target_width: f32 = 200.0; // Minimum node width
+        // Simple fixed-width compact nodes
+        let target_width: f32 = 200.0; // Consistent node width
         
-        // If expanded, pre-measure inspector content to get required width
-        if self.expanded {
-            // Quick invisible measurement of inspector content only
-            let inspector_width = ui.allocate_ui_with_layout(
-                egui::Vec2::new(ui.available_width(), 0.0),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    ui.set_invisible();
-                    ui.separator();
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        bevy_inspector::ui_for_entity(world, self.entity, ui);
-                    }));
-                    ui.separator();
-                    let _ = ui.button("+ Add Component");
-                    let _ = ui.button("+ Add Transition Listener");
-                }
-            ).response.rect.width();
-            
-            target_width = target_width.max(inspector_width);
-        }
-        
-        // Now render everything with the determined width
         let response = ui.allocate_ui_with_layout(
             egui::Vec2::new(target_width, 0.0), // Fixed width, auto height
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
                 // 1. Header
-                let (header_response, header_expansion_changed, header_input_pin_pos) = NodeHeader::new(
+                let (header_response, header_input_pin_pos) = NodeHeader::new(
                     self.entity, 
-                    self.display_name, 
-                    self.expanded
+                    self.display_name
                 ).show(ui);
                 
-                expansion_changed = header_expansion_changed;
                 input_pin_pos = header_input_pin_pos;
                 
-                // 2. Transition section
+                // 2. Transition section (if transitions exist)
                 if !self.transitions.is_empty() {
                     ui.label("Transitions:");
                     for (transition_name, pin_index) in self.transitions {
@@ -305,32 +261,11 @@ impl NodeBody {
                     }
                 }
                 
-                // 3. Entity components (if expanded)
-                if self.expanded {
-                    ui.separator();
-                    
-                    // Inspector UI
-                    let inspector_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        bevy_inspector::ui_for_entity(world, self.entity, ui);
-                    }));
-                    
-                    if inspector_result.is_err() {
-                        ui.label("⚠️ Inspector UI unavailable for this entity");
-                    }
-                    
-                    ui.separator();
-                    
-                    // Action buttons
-                    let _ = ui.button("+ Add Component");
-                    let _ = ui.button("+ Add Transition Listener");
-                }
-                
                 header_response // Return header response for drag/click handling
             }
         );
         
         let mut widget_response = NodeWidgetResponse::new(response.inner);
-        widget_response.expansion_changed = expansion_changed;
         widget_response.input_pin_pos = input_pin_pos;
         widget_response.output_pin_positions = output_pin_positions;
         widget_response
@@ -341,9 +276,93 @@ impl Widget for NodeBody {
     fn ui(self, ui: &mut Ui) -> Response {
         // For the Widget trait, we can't access world, so return a simple response
         ui.vertical(|ui| {
-            ui.add(NodeHeader::new(self.entity, self.display_name, self.expanded));
+            ui.add(NodeHeader::new(self.entity, self.display_name));
             ui.add(TransitionSection::new(self.entity, self.transitions));
-            ui.add(EntityComponents::new(self.entity, self.expanded));
+        }).response
+    }
+}
+
+/// Separate inspector panel widget for showing details of the selected entity
+pub struct EntityInspectorPanel {
+    pub selected_entity: Option<Entity>,
+}
+
+impl EntityInspectorPanel {
+    pub fn new(selected_entity: Option<Entity>) -> Self {
+        Self { selected_entity }
+    }
+
+    /// Show the inspector panel with entity details
+    pub fn show(self, ui: &mut egui::Ui, world: &mut World, dialog_state: &mut crate::resources::ComponentDialogState, transition_state: &mut crate::resources::TransitionCreationState) -> Response {
+        ui.vertical(|ui| {
+            ui.heading("Entity Inspector");
+            ui.separator();
+            
+            match self.selected_entity {
+                Some(entity) => {
+                    ui.label(format!("Selected Entity: {:?}", entity));
+                    ui.separator();
+                    
+                    // Show entity components using bevy-inspector-egui with proper scrolling
+                    let available_height = ui.available_height() - 100.0; // Reserve space for buttons
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .max_height(available_height)
+                        .show(ui, |ui| {
+                            // Use full available width for inspector content
+                            ui.set_max_width(ui.available_width());
+                            
+                            let inspector_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                bevy_inspector::ui_for_entity(world, entity, ui);
+                            }));
+                            
+                            if inspector_result.is_err() {
+                                ui.label("⚠️ Inspector UI unavailable for this entity");
+                            }
+                        });
+                    
+                    ui.separator();
+                    
+                    // Action buttons
+                    ui.horizontal(|ui| {
+                        if ui.button("+ Add Component").clicked() {
+                            // Trigger the component dialog
+                            dialog_state.open_for_entity = Some(entity);
+                            dialog_state.selected_component = None;
+                        }
+                        if ui.button("+ Add Transition Listener").clicked() {
+                            // Trigger the transition dialog  
+                            transition_state.source_entity = Some(entity);
+                            transition_state.selected_event_type = None;
+                            transition_state.selecting_target = false;
+                        }
+                    });
+                },
+                None => {
+                    ui.label("No entity selected");
+                    ui.label("Click on a node to inspect its components");
+                }
+            }
+        }).response
+    }
+}
+
+impl Widget for EntityInspectorPanel {
+    fn ui(self, ui: &mut egui::Ui) -> Response {
+        ui.vertical(|ui| {
+            ui.heading("Entity Inspector");
+            ui.separator();
+            
+            match self.selected_entity {
+                Some(entity) => {
+                    ui.label(format!("Selected Entity: {:?}", entity));
+                    ui.label("(Inspector requires world access - use show() method)");
+                },
+                None => {
+                    ui.label("No entity selected");
+                    ui.label("Click on a node to inspect its components");
+                }
+            }
         }).response
     }
 }

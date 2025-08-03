@@ -19,24 +19,20 @@ impl NodeRenderer {
         world: &mut World,
         node_data: &[(Entity, Vec2, bool, Option<String>)],
         ui_resources: &mut UiResources,
-    ) -> (Vec<(Entity, Vec2)>, Vec<(Entity, bool)>) {
+    ) -> Vec<(Entity, Vec2)> {
         let mut drag_changes = Vec::new();
-        let mut expansion_changes = Vec::new();
         
-        for (entity, position, expanded, _display_name) in node_data {
-            if let Some((new_pos, new_expanded)) = self.handle_node_interactions(
-                ui, *entity, *position, *expanded, world, ui_resources
+        for (entity, position, _expanded, _display_name) in node_data {
+            if let Some(new_pos) = self.handle_node_interactions(
+                ui, *entity, *position, world, ui_resources
             ) {
                 if new_pos != *position {
                     drag_changes.push((*entity, new_pos));
                 }
-                if new_expanded != *expanded {
-                    expansion_changes.push((*entity, new_expanded));
-                }
             }
         }
         
-        (drag_changes, expansion_changes)
+        drag_changes
     }
 
     /// Render unselected nodes visually (PASS 2)
@@ -46,23 +42,15 @@ impl NodeRenderer {
         world: &mut World,
         node_data: &[(Entity, Vec2, bool, Option<String>)],
         ui_resources: &mut UiResources,
-    ) -> Vec<(Entity, bool)> {
-        let mut expansion_changes = Vec::new();
-        
-        for (entity, position, expanded, display_name) in node_data {
+    ) {
+        for (entity, position, _expanded, display_name) in node_data {
             if ui_resources.selected_entity.entity != Some(*entity) {
-                if let Some(new_expanded) = self.draw_node_visual_only(
-                    ui, *entity, *position, *expanded, display_name.clone(), 
+                self.draw_node_visual_only(
+                    ui, *entity, *position, display_name.clone(), 
                     world, ui_resources
-                ) {
-                    if new_expanded != *expanded {
-                        expansion_changes.push((*entity, new_expanded));
-                    }
-                }
+                );
             }
         }
-        
-        expansion_changes
     }
 
     /// Render selected node visually (PASS 4)
@@ -72,24 +60,16 @@ impl NodeRenderer {
         world: &mut World,
         node_data: &[(Entity, Vec2, bool, Option<String>)],
         ui_resources: &mut UiResources,
-    ) -> Vec<(Entity, bool)> {
-        let mut expansion_changes = Vec::new();
-        
+    ) {
         if let Some(selected_entity_id) = ui_resources.selected_entity.entity {
-            if let Some((entity, position, expanded, display_name)) = 
+            if let Some((entity, position, _expanded, display_name)) = 
                 node_data.iter().find(|(e, _, _, _)| *e == selected_entity_id) {
-                if let Some(new_expanded) = self.draw_node_visual_only(
-                    ui, *entity, *position, *expanded, display_name.clone(), 
+                self.draw_node_visual_only(
+                    ui, *entity, *position, display_name.clone(), 
                     world, ui_resources
-                ) {
-                    if new_expanded != *expanded {
-                        expansion_changes.push((*entity, new_expanded));
-                    }
-                }
+                );
             }
         }
-        
-        expansion_changes
     }
 
     /// Handle all input interactions for a single node
@@ -98,10 +78,9 @@ impl NodeRenderer {
         ui: &mut egui::Ui,
         entity: Entity,
         position: Vec2,
-        expanded: bool,
         world: &mut World,
         ui_resources: &mut UiResources,
-    ) -> Option<(Vec2, bool)> {
+    ) -> Option<Vec2> {
         // Use the last measured size for interaction area (from previous frame)
         let measured_size = ui_resources.size_cache.sizes.get(&entity)
             .copied()
@@ -114,7 +93,6 @@ impl NodeRenderer {
         
         // Track changes
         let mut new_position = position;
-        let new_expanded = expanded;
         
         // Handle selection
         if response.clicked() || response.drag_started() {
@@ -133,11 +111,9 @@ impl NodeRenderer {
             new_position.y += delta.y;
         }
         
-        // Note: Button interactions now handled directly in render_node_content
-        
-        // Return changes if any occurred
-        if new_position != position || new_expanded != expanded {
-            Some((new_position, new_expanded))
+        // Return position change if any occurred
+        if new_position != position {
+            Some(new_position)
         } else {
             None
         }
@@ -180,11 +156,10 @@ impl NodeRenderer {
         ui: &mut egui::Ui,
         entity: Entity,
         position: Vec2,
-        expanded: bool,
         display_name: Option<String>,
         world: &mut World,
         ui_resources: &mut UiResources,
-    ) -> Option<bool> {
+    ) {
         let display_name = display_name
             .as_deref()
             .unwrap_or("Unnamed Entity")
@@ -203,16 +178,15 @@ impl NodeRenderer {
             .corner_radius(5.0)
             .inner_margin(8.0);
         
-        // Use allocate_new_ui with a reasonable starting size, allowing natural growth
-        let max_rect = egui::Rect::from_min_size(pos, egui::Vec2::new(200.0, 400.0));
-        let ui_response = ui.allocate_new_ui(egui::UiBuilder::new().max_rect(max_rect), |ui| {
+        // Use allocate_new_ui with compact size for consistent nodes
+        let max_rect = egui::Rect::from_min_size(pos, egui::Vec2::new(200.0, 100.0));
+        let _ui_response = ui.allocate_new_ui(egui::UiBuilder::new().max_rect(max_rect), |ui| {
             // Use the frame to provide background and let it size automatically to content
             let frame_response = frame.show(ui, |ui| {
-                // Use the NodeBody widget - it handles all layout naturally!
+                // Use the simplified NodeBody widget
                 let widget_response = NodeBody::new(
                     entity,
                     display_name,
-                    expanded,
                     transitions,
                 ).show(ui, world);
                 
@@ -224,18 +198,12 @@ impl NodeRenderer {
                 for ((pin_entity, pin_index), pin_pos) in widget_response.output_pin_positions {
                     ui_resources.pin_cache.output_pins.insert((pin_entity, pin_index), pin_pos);
                 }
-                
-                widget_response.expansion_changed
             });
             
             // Store the actual measured size for interactions
             let measured_size = frame_response.response.rect.size();
             ui_resources.size_cache.sizes.insert(entity, measured_size);
-            
-            frame_response.inner
         });
-        
-        ui_response.inner
     }
 
     /// Get the appropriate fill color for a node based on state
