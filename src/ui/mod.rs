@@ -88,7 +88,7 @@ fn render_graph_content(
     );
     
     // PASS 3: Draw connections (on top of unselected nodes, under canvas pin)
-    connection_renderer.render_connections(ui, world, &ui_resources.size_cache, &ui_resources.pin_cache);
+    connection_renderer.render_connections(ui, world, &ui_resources.size_cache, &ui_resources.pin_cache, &ui_resources.connection_animations);
     
     // PASS 4: Render canvas initial state pin (on top of connections)  
     if root_entity != Entity::PLACEHOLDER {
@@ -241,6 +241,7 @@ pub struct UiResources {
     pub transition_state: TransitionCreationState,
     pub selected_entity: SelectedEntity,
     pub drag_drop_state: DragDropState,
+    pub connection_animations: ConnectionAnimations,
 }
 
 impl UiResources {
@@ -253,6 +254,7 @@ impl UiResources {
             transition_state: world.remove_resource::<TransitionCreationState>().unwrap_or_default(),
             selected_entity: world.remove_resource::<SelectedEntity>().unwrap_or_default(),
             drag_drop_state: world.remove_resource::<DragDropState>().unwrap_or_default(),
+            connection_animations: world.remove_resource::<ConnectionAnimations>().unwrap_or_default(),
         }
     }
     
@@ -264,6 +266,7 @@ impl UiResources {
         world.insert_resource(self.transition_state);
         world.insert_resource(self.selected_entity);
         world.insert_resource(self.drag_drop_state);
+        world.insert_resource(self.connection_animations);
     }
 }
 

@@ -81,13 +81,15 @@ impl Widget for TransitionWidget {
 pub struct NodeHeader {
     pub entity: Entity,
     pub display_name: String,
+    pub is_active: bool,
 }
 
 impl NodeHeader {
-    pub fn new(entity: Entity, display_name: String) -> Self {
+    pub fn new(entity: Entity, display_name: String, is_active: bool) -> Self {
         Self {
             entity,
             display_name,
+            is_active,
         }
     }
     
@@ -113,8 +115,15 @@ impl NodeHeader {
                 
                 // Entity name and ID - centered content
                 ui.vertical(|ui| {
-                    ui.strong(&self.display_name);
-                    ui.small(format!("Entity: {:?}", self.entity));
+                    // Use black text for active states, white for inactive
+                    let text_color = if self.is_active {
+                        Color32::BLACK
+                    } else {
+                        Color32::WHITE
+                    };
+                    
+                    ui.colored_label(text_color, &self.display_name);
+                    ui.colored_label(text_color, format!("Entity: {:?}", self.entity));
                 });
             }
         ).response;
@@ -231,12 +240,15 @@ impl NodeBody {
     }
     
     /// Show this widget and return comprehensive interaction data
-    pub fn show(self, ui: &mut Ui, _world: &mut World) -> NodeWidgetResponse {
+    pub fn show(self, ui: &mut Ui, world: &mut World) -> NodeWidgetResponse {
         let mut input_pin_pos = None;
         let mut output_pin_positions = Vec::new();
         
         // Simple fixed-width compact nodes
         let target_width: f32 = 200.0; // Consistent node width
+        
+        // Check if this entity is active
+        let is_active = world.entity(self.entity).contains::<bevy_gearbox::prelude::Active>();
         
         let response = ui.allocate_ui_with_layout(
             egui::Vec2::new(target_width, 0.0), // Fixed width, auto height
@@ -245,7 +257,8 @@ impl NodeBody {
                 // 1. Header
                 let (header_response, header_input_pin_pos) = NodeHeader::new(
                     self.entity, 
-                    self.display_name
+                    self.display_name,
+                    is_active
                 ).show(ui);
                 
                 input_pin_pos = header_input_pin_pos;
@@ -274,9 +287,9 @@ impl NodeBody {
 
 impl Widget for NodeBody {
     fn ui(self, ui: &mut Ui) -> Response {
-        // For the Widget trait, we can't access world, so return a simple response
+        // For the Widget trait, we can't access world, so assume not active
         ui.vertical(|ui| {
-            ui.add(NodeHeader::new(self.entity, self.display_name));
+            ui.add(NodeHeader::new(self.entity, self.display_name, false));
             ui.add(TransitionSection::new(self.entity, self.transitions));
         }).response
     }
@@ -299,12 +312,15 @@ impl ParentNodeBody {
     }
     
     /// Show this widget and return comprehensive interaction data
-    pub fn show(self, ui: &mut Ui, _world: &mut World) -> NodeWidgetResponse {
+    pub fn show(self, ui: &mut Ui, world: &mut World) -> NodeWidgetResponse {
         let mut input_pin_pos = None;
         let mut output_pin_positions = Vec::new();
         
         // Fixed width for parent nodes (same as leaf nodes for consistency)
         let target_width: f32 = 200.0;
+        
+        // Check if this entity is active
+        let is_active = world.entity(self.entity).contains::<bevy_gearbox::prelude::Active>();
         
         let response = ui.allocate_ui_with_layout(
             egui::Vec2::new(target_width, 0.0), // Fixed width, auto height
@@ -313,7 +329,8 @@ impl ParentNodeBody {
                 // 1. Header with blue input pin
                 let (header_response, header_input_pin_pos) = NodeHeader::new(
                     self.entity, 
-                    self.display_name
+                    self.display_name,
+                    is_active
                 ).show(ui);
                 
                 input_pin_pos = header_input_pin_pos;
@@ -342,9 +359,9 @@ impl ParentNodeBody {
 
 impl Widget for ParentNodeBody {
     fn ui(self, ui: &mut Ui) -> Response {
-        // For the Widget trait, we can't access world, so return a simple response
+        // For the Widget trait, we can't access world, so assume not active
         ui.vertical(|ui| {
-            ui.add(NodeHeader::new(self.entity, self.display_name));
+            ui.add(NodeHeader::new(self.entity, self.display_name, false));
             if self.initial_state_target.is_some() {
                 ui.horizontal(|ui| {
                     // Simple red circle for initial state in Widget mode

@@ -247,7 +247,7 @@ impl NodeRenderer {
         };
         
         // Create a custom frame with the node's background color
-        let fill_color = self.get_node_fill_color(entity, &ui_resources.transition_state);
+        let fill_color = self.get_node_fill_color(entity, &ui_resources.transition_state, world);
         let frame = egui::Frame::default()
             .fill(fill_color)
             .corner_radius(5.0)
@@ -388,7 +388,7 @@ impl NodeRenderer {
         let header_ui_min = header_ui.min_rect().min;
         
         // Use a frame for the header to make it stand out
-        let header_fill_color = self.get_node_fill_color(entity, &ui_resources.transition_state);
+        let header_fill_color = self.get_node_fill_color(entity, &ui_resources.transition_state, world);
         let header_frame = egui::Frame::default()
             .fill(header_fill_color)
             .corner_radius(5.0)
@@ -737,8 +737,13 @@ impl NodeRenderer {
     }
 
     /// Get the appropriate fill color for a node based on state
-    fn get_node_fill_color(&self, entity: Entity, transition_state: &TransitionCreationState) -> egui::Color32 {
-        if transition_state.selecting_target {
+    fn get_node_fill_color(&self, entity: Entity, transition_state: &TransitionCreationState, world: &World) -> egui::Color32 {
+        // Check if this entity has the Active component (active state gets gold color)
+        let is_active = world.entity(entity).contains::<bevy_gearbox::prelude::Active>();
+        
+        if is_active {
+            egui::Color32::from_rgb(255, 215, 0) // Gold color for active states
+        } else if transition_state.selecting_target {
             if transition_state.source_entity == Some(entity) {
                 egui::Color32::from_rgb(80, 60, 60) // Source node in red tint
             } else {

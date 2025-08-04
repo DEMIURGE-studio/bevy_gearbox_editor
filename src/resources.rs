@@ -79,3 +79,68 @@ pub enum ResizeEdge {
     Bottom,
     Corner, // Both right and bottom
 }
+
+/// Tracks animations for connection visual feedback when transitions fire
+#[derive(Resource, Default)]
+pub struct ConnectionAnimations {
+    /// Map of (source_entity, target_entity) -> remaining animation time in seconds
+    pub active_animations: std::collections::HashMap<(Entity, Entity), f32>,
+}
+
+impl ConnectionAnimations {
+    /// Start a new animation for a connection (0.25 seconds)
+    pub fn start_animation(&mut self, source: Entity, target: Entity) {
+        self.active_animations.insert((source, target), 0.25);
+        println!("🟡 Started transition animation: {:?} -> {:?}", source, target);
+    }
+    
+    /// Update all animations with delta time, returns list of completed animations
+    pub fn update(&mut self, delta_time: f32) -> Vec<(Entity, Entity)> {
+        let mut completed = Vec::new();
+        
+        // Update existing animations
+        self.active_animations.retain(|(source, target), timer| {
+            *timer -= delta_time;
+            if *timer <= 0.0 {
+                completed.push((*source, *target));
+                false // Remove completed animation
+            } else {
+                true // Keep active animation
+            }
+        });
+        
+        completed
+    }
+    
+    /// Get the animation progress for a connection (0.0 = just started gold, 1.0 = back to normal)
+    pub fn get_animation_progress(&self, source: Entity, target: Entity) -> Option<f32> {
+        self.active_animations.get(&(source, target))
+            .map(|remaining_time| {
+                // Convert remaining time to progress (0.0 = gold, 1.0 = normal)
+                1.0 - (remaining_time / 0.25)
+            })
+    }
+    
+    /// Check if a connection is currently animated
+    pub fn is_animated(&self, source: Entity, target: Entity) -> bool {
+        self.active_animations.contains_key(&(source, target))
+    }
+    
+    /// Get the interpolated color for a connection based on animation progress
+    pub fn get_connection_color(&self, source: Entity, target: Entity) -> egui::Color32 {
+        if let Some(progress) = self.get_animation_progress(source, target) {
+            // Lerp from gold (255, 215, 0) to normal blue (150, 150, 255)
+            let gold = egui::Color32::from_rgb(255, 215, 0);
+            let normal = egui::Color32::from_rgb(150, 150, 255);
+            
+            let r = (gold.r() as f32 * (1.0 - progress) + normal.r() as f32 * progress) as u8;
+            let g = (gold.g() as f32 * (1.0 - progress) + normal.g() as f32 * progress) as u8;
+            let b = (gold.b() as f32 * (1.0 - progress) + normal.b() as f32 * progress) as u8;
+            
+            egui::Color32::from_rgb(r, g, b)
+        } else {
+            // Default connection color - nice blue
+            egui::Color32::from_rgb(150, 150, 255)
+        }
+    }
+}

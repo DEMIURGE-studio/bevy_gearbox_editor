@@ -312,3 +312,30 @@ pub fn enforce_root_hierarchy(
         }
     }
 }
+
+/// Listen for transition events and trigger visual animations
+pub fn transition_animation_listener(
+    trigger: Trigger<bevy_gearbox::Transition>,
+    mut connection_animations: ResMut<crate::resources::ConnectionAnimations>,
+) {
+    let transition = trigger.event();
+    let source = transition.source;
+    let target = transition.connection.target;
+    
+    // Start the visual animation for this connection
+    connection_animations.start_animation(source, target);
+}
+
+/// Update connection animations over time
+pub fn update_connection_animations(
+    mut connection_animations: ResMut<crate::resources::ConnectionAnimations>,
+    time: Res<Time>,
+) {
+    let delta_time = time.delta_secs();
+    let completed = connection_animations.update(delta_time);
+    
+    // Log completed animations (optional)
+    for (source, target) in completed {
+        println!("✨ Completed transition animation: {:?} -> {:?}", source, target);
+    }
+}

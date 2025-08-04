@@ -44,9 +44,12 @@ impl Plugin for GearboxEditorPlugin {
             .register_type::<InitialStatePointer>()
             // Initialize drag-drop state resource
             .init_resource::<DragDropState>()
+            // Initialize connection animations resource
+            .init_resource::<ConnectionAnimations>()
                        // Add systems
             .add_systems(Startup, setup_graph_canvas)  
-            .add_systems(Update, (auto_discover_connections, manage_parent_zones, enforce_root_hierarchy))
+            .add_systems(Update, (auto_discover_connections, manage_parent_zones, enforce_root_hierarchy, update_connection_animations))
+            .add_observer(transition_animation_listener)
            .add_systems(EguiPrimaryContextPass, render_graph_nodes_system);
     }
 }

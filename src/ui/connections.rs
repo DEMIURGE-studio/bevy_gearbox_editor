@@ -17,7 +17,8 @@ impl ConnectionRenderer {
         ui: &mut egui::Ui, 
         world: &mut World, 
         size_cache: &NodeSizeCache, 
-        pin_cache: &PinPositionCache
+        pin_cache: &PinPositionCache,
+        connection_animations: &ConnectionAnimations,
     ) {
         // Get all connections
         let connections: Vec<Connection> = world.query::<&Connection>().iter(world).cloned().collect();
@@ -27,7 +28,7 @@ impl ConnectionRenderer {
         
         // Draw each connection
         for connection in connections {
-            self.draw_connection_line(ui, &connection, &node_positions, size_cache, pin_cache);
+            self.draw_connection_line(ui, &connection, &node_positions, size_cache, pin_cache, connection_animations);
         }
     }
 
@@ -54,6 +55,7 @@ impl ConnectionRenderer {
         node_positions: &HashMap<Entity, Vec2>,
         size_cache: &NodeSizeCache,
         pin_cache: &PinPositionCache,
+        connection_animations: &ConnectionAnimations,
     ) {
         // Try to get actual pin positions from cache first
         let from_pin_pos = pin_cache.output_pins.get(&(connection.from_entity, connection.from_pin_index));
@@ -73,8 +75,11 @@ impl ConnectionRenderer {
             }
         };
         
-        // Draw bezier curve
-        self.draw_bezier_connection(ui, from_pin_pos, to_pin_pos, &connection.connection_type);
+        // Get animated color for this connection
+        let connection_color = connection_animations.get_connection_color(connection.from_entity, connection.to_entity);
+        
+        // Draw bezier curve with animated color
+        self.draw_bezier_connection(ui, from_pin_pos, to_pin_pos, &connection.connection_type, connection_color);
     }
 
     /// Calculate the world position of an output pin based on node layout
@@ -117,8 +122,8 @@ impl ConnectionRenderer {
     }
 
     /// Draw a bezier curve connection between two points
-    fn draw_bezier_connection(&self, ui: &mut egui::Ui, from: egui::Pos2, to: egui::Pos2, _label: &str) {
-        let stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(150, 150, 255));
+    fn draw_bezier_connection(&self, ui: &mut egui::Ui, from: egui::Pos2, to: egui::Pos2, _label: &str, color: egui::Color32) {
+        let stroke = egui::Stroke::new(2.0, color);
         
         // Create bezier control points for right-to-left connection (output to input)
         let control_distance = 80.0;
