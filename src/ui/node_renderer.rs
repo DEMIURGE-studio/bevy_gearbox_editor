@@ -4,6 +4,7 @@ use crate::components::*;
 use crate::resources::*;
 use super::UiResources;
 use super::widgets::{NodeBody, ParentNodeBody};
+use crate::resources::ResizeEdge;
 
 pub struct NodeRenderer;
 
@@ -22,6 +23,10 @@ impl NodeRenderer {
     ) -> Vec<(Entity, Vec2)> {
         let mut drag_changes = Vec::new();
         
+        // First, handle resize interactions for parent zones (higher priority)
+        self.handle_resize_interactions(ui, world, ui_resources);
+        
+        // Then handle regular node interactions
         for (entity, position, _expanded, _display_name) in node_data {
             if let Some(new_pos) = self.handle_node_interactions(
                 ui, *entity, *position, world, ui_resources
@@ -84,6 +89,12 @@ impl NodeRenderer {
         // Prevent children from being dragged independently while their parent is being dragged
         if ui_resources.drag_drop_state.dragging_children.contains(&entity) {
             // This child is following its parent - don't process independent interactions
+            return None;
+        }
+        
+        // Prevent dragging if we're currently resizing
+        if ui_resources.drag_drop_state.resizing_entity.is_some() {
+            // Don't process drag interactions while resizing
             return None;
         }
         // Use the last measured size for interaction area (from previous frame)
@@ -153,6 +164,12 @@ impl NodeRenderer {
             ui_resources.drag_drop_state.dragging_children.clear();
             ui_resources.drag_drop_state.children_initial_positions.clear();
             ui_resources.drag_drop_state.parent_initial_position = None;
+            
+            // Clear resize state
+            ui_resources.drag_drop_state.resizing_entity = None;
+            ui_resources.drag_drop_state.resize_edge = None;
+            ui_resources.drag_drop_state.initial_zone_bounds = None;
+            ui_resources.drag_drop_state.resize_start_mouse_pos = None;
         }
         
         // Return position change if any occurred
@@ -373,6 +390,165 @@ impl NodeRenderer {
             let measured_size = frame_response.response.rect.size();
             ui_resources.size_cache.sizes.insert(entity, measured_size);
         });
+    }
+
+    /// Handle resize interactions for parent zones
+    fn handle_resize_interactions(
+        &self,
+        ui: &mut egui::Ui,
+        world: &mut World,
+        ui_resources: &mut UiResources,
+    ) {
+        let mouse_pos = if let Some(hover_pos) = ui.ctx().pointer_hover_pos() {
+            Vec2::new(hover_pos.x, hover_pos.y)
+        } else {
+            return; // No mouse position available
+        };
+        
+        // Check if we're currently resizing
+        if let Some(resizing_entity) = ui_resources.drag_drop_state.resizing_entity {
+            // Handle ongoing resize operation
+            if ui.ctx().input(|i| i.pointer.primary_down()) {
+                self.apply_zone_resize(resizing_entity, mouse_pos, world, ui_resources);
+            } else {
+                // Resize ended
+                println!("🔄 Finished resizing entity {:?}", resizing_entity);
+                ui_resources.drag_drop_state.resizing_entity = None;
+                ui_resources.drag_drop_state.resize_edge = None;
+                ui_resources.drag_drop_state.initial_zone_bounds = None;
+                ui_resources.drag_drop_state.resize_start_mouse_pos = None;
+            }
+            return;
+        }
+        
+        // Check for resize edge detection on parent zones
+        let mut parent_zones_query = world.query::<(Entity, &GraphNode, &mut ParentZone)>();
+        let parent_zones: Vec<_> = parent_zones_query
+            .iter(world)
+            .map(|(entity, graph_node, parent_zone)| (entity, graph_node.position, parent_zone.bounds))
+            .collect();
+        
+        for (zone_entity, zone_position, zone_bounds) in parent_zones {
+            if let Some(resize_edge) = self.detect_resize_edge(mouse_pos, zone_position, zone_bounds) {
+                // Set cursor for resize
+                match resize_edge {
+                    ResizeEdge::Right => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal),
+                    ResizeEdge::Bottom => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical),
+                    ResizeEdge::Corner => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe),
+                }
+                
+                // Check for drag start
+                if ui.ctx().input(|i| i.pointer.primary_pressed()) {
+                    println!("🔄 Started resizing {:?} edge: {:?}", zone_entity, resize_edge);
+                    ui_resources.drag_drop_state.resizing_entity = Some(zone_entity);
+                    ui_resources.drag_drop_state.resize_edge = Some(resize_edge);
+                    ui_resources.drag_drop_state.initial_zone_bounds = Some(zone_bounds);
+                    ui_resources.drag_drop_state.resize_start_mouse_pos = Some(mouse_pos);
+                }
+                return; // Only handle one resize at a time
+            }
+        }
+    }
+    
+    /// Detect which edge of a parent zone the mouse is over for resizing
+    fn detect_resize_edge(&self, mouse_pos: Vec2, zone_position: Vec2, zone_bounds: bevy::math::Rect) -> Option<ResizeEdge> {
+        let edge_threshold = 8.0; // Distance from edge to be considered "on edge"
+        
+        // Convert zone bounds to world coordinates
+        let zone_world_rect = bevy::math::Rect::new(
+            zone_position.x + zone_bounds.min.x,
+            zone_position.y + zone_bounds.min.y,
+            zone_position.x + zone_bounds.max.x,
+            zone_position.y + zone_bounds.max.y,
+        );
+        
+        let right_edge = zone_world_rect.max.x;
+        let bottom_edge = zone_world_rect.max.y;
+        
+        let near_right = (mouse_pos.x - right_edge).abs() < edge_threshold;
+        let near_bottom = (mouse_pos.y - bottom_edge).abs() < edge_threshold;
+        
+        // Check if mouse is within the zone area (for edge detection)
+        let in_zone_x = mouse_pos.x >= zone_world_rect.min.x - edge_threshold 
+                     && mouse_pos.x <= zone_world_rect.max.x + edge_threshold;
+        let in_zone_y = mouse_pos.y >= zone_world_rect.min.y - edge_threshold 
+                     && mouse_pos.y <= zone_world_rect.max.y + edge_threshold;
+        
+        if near_right && near_bottom && in_zone_x && in_zone_y {
+            Some(ResizeEdge::Corner)
+        } else if near_right && in_zone_y && mouse_pos.y >= zone_world_rect.min.y && mouse_pos.y <= zone_world_rect.max.y {
+            Some(ResizeEdge::Right)
+        } else if near_bottom && in_zone_x && mouse_pos.x >= zone_world_rect.min.x && mouse_pos.x <= zone_world_rect.max.x {
+            Some(ResizeEdge::Bottom)
+        } else {
+            None
+        }
+    }
+    
+    /// Apply resize changes to a parent zone
+    fn apply_zone_resize(
+        &self,
+        resizing_entity: Entity,
+        current_mouse_pos: Vec2,
+        world: &mut World,
+        ui_resources: &UiResources,
+    ) {
+        let Some(resize_edge) = &ui_resources.drag_drop_state.resize_edge else { return; };
+        let Some(initial_bounds) = ui_resources.drag_drop_state.initial_zone_bounds else { return; };
+        let Some(start_mouse_pos) = ui_resources.drag_drop_state.resize_start_mouse_pos else { return; };
+        
+        // Calculate mouse delta
+        let delta = current_mouse_pos - start_mouse_pos;
+        
+        // Get the parent zone component to update
+        let Ok(mut parent_zone) = world.query::<&mut ParentZone>().get_mut(world, resizing_entity) else { return; };
+        
+        // Calculate new bounds based on resize edge and mouse delta
+        let mut new_bounds = initial_bounds;
+        
+        match resize_edge {
+            ResizeEdge::Right => {
+                new_bounds.max.x = initial_bounds.max.x + delta.x;
+            },
+            ResizeEdge::Bottom => {
+                new_bounds.max.y = initial_bounds.max.y + delta.y;
+            },
+            ResizeEdge::Corner => {
+                new_bounds.max.x = initial_bounds.max.x + delta.x;
+                new_bounds.max.y = initial_bounds.max.y + delta.y;
+            },
+        }
+        
+        // Ensure minimum size constraints
+        let min_width = parent_zone.min_size.x;
+        let min_height = parent_zone.min_size.y;
+        
+        if new_bounds.width() < min_width {
+            new_bounds.max.x = new_bounds.min.x + min_width;
+        }
+        if new_bounds.height() < min_height {
+            new_bounds.max.y = new_bounds.min.y + min_height;
+        }
+        
+        // Update the parent zone bounds
+        parent_zone.bounds = new_bounds;
+        
+        // Update resize handles (for future reference)
+        let handle_size = 10.0;
+        parent_zone.resize_handles = [
+            // Top edge (not used currently)
+            bevy::math::Rect::new(new_bounds.min.x, new_bounds.min.y - handle_size/2.0, 
+                                new_bounds.max.x, new_bounds.min.y + handle_size/2.0),
+            // Right edge
+            bevy::math::Rect::new(new_bounds.max.x - handle_size/2.0, new_bounds.min.y, 
+                                new_bounds.max.x + handle_size/2.0, new_bounds.max.y),
+            // Bottom edge
+            bevy::math::Rect::new(new_bounds.min.x, new_bounds.max.y - handle_size/2.0, 
+                                new_bounds.max.x, new_bounds.max.y + handle_size/2.0),
+            // Left edge (not used currently)
+            bevy::math::Rect::new(new_bounds.min.x - handle_size/2.0, new_bounds.min.y, 
+                                new_bounds.min.x + handle_size/2.0, new_bounds.max.y),
+        ];
     }
 
     /// Update zone hover state during drag operations

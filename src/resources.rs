@@ -62,4 +62,20 @@ pub struct DragDropState {
     pub children_initial_positions: HashMap<Entity, Vec2>,
     /// Initial position of the dragged parent (for calculating deltas)
     pub parent_initial_position: Option<Vec2>,
+    /// The entity currently being resized (if any)
+    pub resizing_entity: Option<Entity>,
+    /// Which edge is being resized (Right, Bottom, or Corner for both)
+    pub resize_edge: Option<ResizeEdge>,
+    /// Initial bounds of the zone being resized
+    pub initial_zone_bounds: Option<bevy::math::Rect>,
+    /// Initial mouse position when resize started
+    pub resize_start_mouse_pos: Option<Vec2>,
+}
+
+/// Represents which edge of a parent zone is being resized
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResizeEdge {
+    Right,
+    Bottom,
+    Corner, // Both right and bottom
 }
