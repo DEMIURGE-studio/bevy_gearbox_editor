@@ -38,8 +38,8 @@ pub fn auto_discover_connections(
             });
         }
         
-        // Check if this entity has Children (is a parent node) and needs an initial state pin
-        if entity_ref.contains::<Children>() {
+        // Check if this entity has Children (is a parent node) or is a StateMachineRoot and needs an initial state pin
+        if entity_ref.contains::<Children>() || entity_ref.contains::<bevy_gearbox::StateMachineRoot>() {
             // Check if we already have an initial state output pin
             if !pins.iter().any(|p| p.pin_type == PinType::Output && p.label == "InitialState") {
                 pins.push(NodePin {
@@ -47,7 +47,13 @@ pub fn auto_discover_connections(
                     pin_index: usize::MAX, // Special index for initial state pin
                     label: "InitialState".to_string(),
                 });
-                println!("🔌 Created initial state output pin for parent entity {:?}", entity);
+                
+                let entity_type = if entity_ref.contains::<bevy_gearbox::StateMachineRoot>() {
+                    "root"
+                } else {
+                    "parent"
+                };
+                println!("🔌 Created initial state output pin for {} entity {:?}", entity_type, entity);
             }
         }
         
@@ -187,7 +193,7 @@ fn create_connections_from_transition_listeners(
     }
 }
 
-/// Create connections for initial state pins from parent entities to their initial state targets
+/// Create connections for initial state pins from parent entities and root entities to their initial state targets
 fn create_initial_state_connections(
     commands: &mut Commands,
     entity: Entity,
@@ -195,8 +201,8 @@ fn create_initial_state_connections(
     existing_connections: &Query<&Connection>,
     _world: &World,
 ) {
-    // Only process entities with Children (parent entities)
-    if !entity_ref.contains::<Children>() {
+    // Only process entities with Children (parent entities) or StateMachineRoot (root entities)
+    if !entity_ref.contains::<Children>() && !entity_ref.contains::<bevy_gearbox::StateMachineRoot>() {
         return;
     }
 
@@ -253,5 +259,56 @@ pub fn manage_parent_zones(
     for entity in orphaned_zones.iter() {
         commands.entity(entity).remove::<ParentZone>();
         println!("🗑️ Removed ParentZone from entity {:?} (no longer has Children)", entity);
+    }
+}
+
+/// Ensures all state entities are properly parented to maintain hierarchy
+/// Any EntityNode without a valid ChildOf relationship becomes a child of the root
+pub fn enforce_root_hierarchy(
+    mut commands: Commands,
+    root_query: Query<Entity, With<bevy_gearbox::StateMachineRoot>>,
+    entity_nodes: Query<Entity, (With<EntityNode>, With<GraphNode>)>,
+    world: &World,
+) {
+    // Find the root entity
+    let Some(root_entity) = root_query.iter().next() else {
+        return; // No root entity found
+    };
+    
+    for entity in entity_nodes.iter() {
+        // Skip the root entity itself
+        if entity == root_entity {
+            continue;
+        }
+        
+        let entity_ref = world.entity(entity);
+        let needs_root_parent = if let Some(child_of) = entity_ref.get::<ChildOf>() {
+            let parent_entity = child_of.0;
+            
+            // Check if the parent still exists and has EntityNode (is a valid state parent)
+            if let Ok(parent_ref) = world.get_entity(parent_entity) {
+                // If parent is root, that's fine
+                if parent_entity == root_entity {
+                    false
+                } else if parent_ref.contains::<EntityNode>() && parent_ref.contains::<GraphNode>() {
+                    // Parent is a valid state entity
+                    false
+                } else {
+                    // Parent exists but is not a valid state entity - reassign to root
+                    true
+                }
+            } else {
+                // Parent entity no longer exists - reassign to root
+                true
+            }
+        } else {
+            // No ChildOf component - needs to be child of root
+            true
+        };
+        
+        if needs_root_parent {
+            commands.entity(entity).insert(ChildOf(root_entity));
+            println!("🌳 Assigned orphaned entity {:?} to root {:?}", entity, root_entity);
+        }
     }
 }

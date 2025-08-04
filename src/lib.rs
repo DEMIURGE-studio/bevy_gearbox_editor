@@ -46,7 +46,7 @@ impl Plugin for GearboxEditorPlugin {
             .init_resource::<DragDropState>()
                        // Add systems
             .add_systems(Startup, setup_graph_canvas)  
-            .add_systems(Update, (auto_discover_connections, manage_parent_zones))
+            .add_systems(Update, (auto_discover_connections, manage_parent_zones, enforce_root_hierarchy))
            .add_systems(EguiPrimaryContextPass, render_graph_nodes_system);
     }
 }

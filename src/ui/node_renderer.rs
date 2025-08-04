@@ -102,9 +102,9 @@ impl NodeRenderer {
             .copied()
             .unwrap_or(egui::Vec2::new(200.0, 80.0)); // Fallback for first frame
         
-        // Create invisible interaction area using measured size
-        let pos = egui::Pos2::new(position.x, position.y);
-        let rect = egui::Rect::from_min_size(pos, measured_size);
+        // Create invisible interaction area using measured size with relative positioning
+        let ui_pos = ui.min_rect().min + egui::Vec2::new(position.x, position.y);
+        let rect = egui::Rect::from_min_size(ui_pos, measured_size);
         let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
         
         // Track changes
@@ -226,8 +226,6 @@ impl NodeRenderer {
             .unwrap_or("Unnamed Entity")
             .to_string();
         
-        // Position for the node (converted to egui::Pos2 when needed)
-        
         // Check if this entity has children to determine if it's a parent node
         // Collect all the data we need from world before the closure
         let entity_ref = world.entity(entity);
@@ -257,46 +255,76 @@ impl NodeRenderer {
         
         if has_children {
             // Parent node: render zone background + header at top-left
-            self.render_parent_node_with_zone(
+            self.render_parent_node_with_zone_relative(
                 ui, entity, position, display_name, initial_state_target, 
                 world, ui_resources
             );
         } else {
-            // Leaf node: render as compact node
-            let max_rect = egui::Rect::from_min_size(egui::Pos2::new(position.x, position.y), egui::Vec2::new(200.0, 100.0));
-            let _ui_response = ui.allocate_new_ui(egui::UiBuilder::new().max_rect(max_rect), |ui| {
-                // Use the frame to provide background and let it size automatically to content
-                let frame_response = frame.show(ui, |ui| {
-                    let widget_response = NodeBody::new(
-                        entity,
-                        display_name,
-                        transitions,
-                    ).show(ui, world);
-                    
-                    // Update pin caches with widget data
-                    if let Some(input_pos) = widget_response.input_pin_pos {
-                        ui_resources.pin_cache.input_pins.insert(entity, input_pos);
-                    }
-                    
-                    // Move the output_pin_positions before the loop to avoid borrow issues
-                    let output_positions = widget_response.output_pin_positions;
-                    for ((pin_entity, pin_index), pin_pos) in output_positions {
-                        ui_resources.pin_cache.output_pins.insert((pin_entity, pin_index), pin_pos);
-                    }
-                    
-                    // Return the response part of the widget_response
-                    widget_response.response
-                });
-                
-                // Store the actual measured size for interactions
-                let measured_size = frame_response.response.rect.size();
-                ui_resources.size_cache.sizes.insert(entity, measured_size);
-            });
+            // Leaf node: render using relative positioning within the scroll area
+            self.render_leaf_node_relative(
+                ui, entity, position, display_name, transitions, frame, world, ui_resources
+            );
         }
     }
+    
+    /// Render a leaf node using UI-relative positioning
+    fn render_leaf_node_relative(
+        &self,
+        ui: &mut egui::Ui,
+        entity: Entity,
+        position: Vec2,
+        display_name: String,
+        transitions: Vec<(String, usize)>,
+        frame: egui::Frame,
+        world: &mut World,
+        ui_resources: &mut UiResources,
+    ) {
+        // Convert position to be relative to the current UI min rect
+        let ui_pos = ui.min_rect().min + egui::Vec2::new(position.x, position.y);
+        
+        // Allocate space at the specified position
+        let node_size = egui::Vec2::new(200.0, 100.0);
+        let node_rect = egui::Rect::from_min_size(ui_pos, node_size);
+        
+        // Create a child UI at the specified position
+        let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(node_rect).layout(egui::Layout::top_down(egui::Align::Min)));
+        
+        // Capture child UI min_rect before entering the closure
+        let child_ui_min = child_ui.min_rect().min;
+        
+        // Render the frame and widget in the child UI
+        let frame_response = frame.show(&mut child_ui, |ui| {
+            let widget_response = NodeBody::new(
+                entity,
+                display_name,
+                transitions,
+            ).show(ui, world);
+            
+            // Update pin caches with widget data - convert to parent UI coordinates
+            if let Some(input_pos) = widget_response.input_pin_pos {
+                // Convert child UI coordinates to parent UI coordinates
+                let parent_pos = ui_pos + (input_pos - child_ui_min);
+                ui_resources.pin_cache.input_pins.insert(entity, parent_pos);
+            }
+            
+            // Process output pins
+            let output_positions = widget_response.output_pin_positions;
+            for ((pin_entity, pin_index), pin_pos) in output_positions {
+                // Convert child UI coordinates to parent UI coordinates
+                let parent_pos = ui_pos + (pin_pos - child_ui_min);
+                ui_resources.pin_cache.output_pins.insert((pin_entity, pin_index), parent_pos);
+            }
+            
+            widget_response.response
+        });
+        
+        // Store the actual measured size for interactions
+        let measured_size = frame_response.response.rect.size();
+        ui_resources.size_cache.sizes.insert(entity, measured_size);
+    }
 
-    /// Render a parent node with its zone background and header positioned at top-left
-    fn render_parent_node_with_zone(
+    /// Render a parent node with its zone background using relative positioning
+    fn render_parent_node_with_zone_relative(
         &self,
         ui: &mut egui::Ui,
         entity: Entity,
@@ -311,11 +339,11 @@ impl NodeRenderer {
             .map(|pz| pz.bounds)
             .unwrap_or(bevy::math::Rect::new(0.0, 0.0, 400.0, 300.0)); // Default zone size
         
-        // Convert bevy Rect to egui Rect for zone background
-        let zone_rect = egui::Rect::from_min_size(
-            egui::Pos2::new(position.x + zone_bounds.min.x, position.y + zone_bounds.min.y),
-            egui::Vec2::new(zone_bounds.width(), zone_bounds.height())
-        );
+        // Convert position to be relative to the current UI
+        let ui_min = ui.min_rect().min;
+        let zone_pos = ui_min + egui::Vec2::new(position.x + zone_bounds.min.x, position.y + zone_bounds.min.y);
+        let zone_size = egui::Vec2::new(zone_bounds.width(), zone_bounds.height());
+        let zone_rect = egui::Rect::from_min_size(zone_pos, zone_size);
         
         // 1. Draw zone background with highlighting for drag-over state
         let (zone_fill_color, zone_stroke_color) = if ui_resources.drag_drop_state.hover_zone_entity == Some(entity) 
@@ -333,10 +361,10 @@ impl NodeRenderer {
             )
         };
         
-        // Draw zone background and border separately
+        // Draw zone background and border
         ui.painter().rect_filled(zone_rect, 5.0, zone_fill_color);
         
-        // Draw border - let's try a simpler approach
+        // Draw border
         let border_points = vec![
             zone_rect.left_top(),
             zone_rect.right_top(),
@@ -349,48 +377,53 @@ impl NodeRenderer {
             egui::Stroke::new(2.0, zone_stroke_color)
         ));
         
-        // 2. Position header at top-left of zone
-        let header_pos = egui::Pos2::new(
-            zone_rect.min.x + 10.0, // Small margin from left edge
-            zone_rect.min.y + 10.0  // Small margin from top edge
-        );
+        // 2. Position header at top-left of zone using child UI
+        let header_pos = zone_rect.min + egui::Vec2::new(10.0, 10.0); // Small margin from edges
+        let header_size = egui::Vec2::new(200.0, 80.0);
+        let header_rect = egui::Rect::from_min_size(header_pos, header_size);
         
-        let header_max_rect = egui::Rect::from_min_size(header_pos, egui::Vec2::new(200.0, 80.0));
-        let _header_ui = ui.allocate_new_ui(egui::UiBuilder::new().max_rect(header_max_rect), |ui| {
-            // Use a frame for the header to make it stand out
-            let header_fill_color = self.get_node_fill_color(entity, &ui_resources.transition_state);
-            let header_frame = egui::Frame::default()
-                .fill(header_fill_color)
-                .corner_radius(5.0)
-                .inner_margin(8.0);
+        let mut header_ui = ui.new_child(egui::UiBuilder::new().max_rect(header_rect).layout(egui::Layout::top_down(egui::Align::Min)));
+        
+        // Capture header UI min_rect before entering the closure
+        let header_ui_min = header_ui.min_rect().min;
+        
+        // Use a frame for the header to make it stand out
+        let header_fill_color = self.get_node_fill_color(entity, &ui_resources.transition_state);
+        let header_frame = egui::Frame::default()
+            .fill(header_fill_color)
+            .corner_radius(5.0)
+            .inner_margin(8.0);
+        
+        let frame_response = header_frame.show(&mut header_ui, |ui| {
+            // Render the parent node widget
+            let widget_response = ParentNodeBody::new(
+                entity,
+                display_name,
+                initial_state_target,
+            ).show(ui, world);
             
-            let frame_response = header_frame.show(ui, |ui| {
-                // Render the parent node widget
-                let widget_response = ParentNodeBody::new(
-                    entity,
-                    display_name,
-                    initial_state_target,
-                ).show(ui, world);
-                
-                // Update pin caches with widget data
-                if let Some(input_pos) = widget_response.input_pin_pos {
-                    ui_resources.pin_cache.input_pins.insert(entity, input_pos);
-                }
-                
-                // Move the output_pin_positions before the loop to avoid borrow issues
-                let output_positions = widget_response.output_pin_positions;
-                for ((pin_entity, pin_index), pin_pos) in output_positions {
-                    ui_resources.pin_cache.output_pins.insert((pin_entity, pin_index), pin_pos);
-                }
-                
-                widget_response.response
-            });
+            // Update pin caches with widget data - convert to parent UI coordinates
+            if let Some(input_pos) = widget_response.input_pin_pos {
+                let parent_pos = header_pos + (input_pos - header_ui_min);
+                ui_resources.pin_cache.input_pins.insert(entity, parent_pos);
+            }
             
-            // Store the header size for interactions (not the full zone)
-            let measured_size = frame_response.response.rect.size();
-            ui_resources.size_cache.sizes.insert(entity, measured_size);
+            // Process output pins
+            let output_positions = widget_response.output_pin_positions;
+            for ((pin_entity, pin_index), pin_pos) in output_positions {
+                let parent_pos = header_pos + (pin_pos - header_ui_min);
+                ui_resources.pin_cache.output_pins.insert((pin_entity, pin_index), parent_pos);
+            }
+            
+            widget_response.response
         });
+        
+        // Store the header size for interactions (not the full zone)
+        let measured_size = frame_response.response.rect.size();
+        ui_resources.size_cache.sizes.insert(entity, measured_size);
     }
+
+
 
     /// Handle resize interactions for parent zones
     fn handle_resize_interactions(
@@ -400,7 +433,9 @@ impl NodeRenderer {
         ui_resources: &mut UiResources,
     ) {
         let mouse_pos = if let Some(hover_pos) = ui.ctx().pointer_hover_pos() {
-            Vec2::new(hover_pos.x, hover_pos.y)
+            // Convert screen mouse position to UI-relative position
+            let ui_relative_pos = hover_pos - ui.min_rect().min;
+            Vec2::new(ui_relative_pos.x, ui_relative_pos.y)
         } else {
             return; // No mouse position available
         };
@@ -690,11 +725,13 @@ impl NodeRenderer {
                 println!("👶 Made entity {:?} a child of {:?}", dragging_entity, target_parent);
             }
         } else {
-            // Dragged outside any zone - remove ChildOf if it exists
+            // Dragged outside any zone - assign to root entity instead of removing ChildOf
+            // Since we can't easily query with an immutable World reference, we'll let the enforce_root_hierarchy system handle this
+            // For now, just remove the ChildOf and let the system assign it to root on the next frame
             let entity_ref = world.entity(dragging_entity);
             if entity_ref.contains::<ChildOf>() {
                 world.entity_mut(dragging_entity).remove::<ChildOf>();
-                println!("🆓 Removed entity {:?} from parent relationship", dragging_entity);
+                println!("🆓 Removed entity {:?} from parent relationship (will be assigned to root by system)", dragging_entity);
             }
         }
     }
