@@ -81,6 +81,11 @@ impl NodeRenderer {
         world: &mut World,
         ui_resources: &mut UiResources,
     ) -> Option<Vec2> {
+        // Prevent children from being dragged independently while their parent is being dragged
+        if ui_resources.drag_drop_state.dragging_children.contains(&entity) {
+            // This child is following its parent - don't process independent interactions
+            return None;
+        }
         // Use the last measured size for interaction area (from previous frame)
         let measured_size = ui_resources.size_cache.sizes.get(&entity)
             .copied()
@@ -102,7 +107,15 @@ impl NodeRenderer {
         // Handle drag start
         if response.drag_started() && !ui_resources.transition_state.selecting_target {
             ui_resources.drag_drop_state.dragging_entity = Some(entity);
-            println!("🖱️ Started dragging entity {:?}", entity);
+            
+            // If this entity has children, collect them for coordinated movement
+            let entity_ref = world.entity(entity);
+            if entity_ref.contains::<Children>() {
+                self.setup_parent_drag(entity, position, world, ui_resources);
+                println!("🖱️ Started dragging parent entity {:?} with children", entity);
+            } else {
+                println!("🖱️ Started dragging entity {:?}", entity);
+            }
         }
         
         // Handle transition target selection
@@ -115,6 +128,12 @@ impl NodeRenderer {
             let delta = response.drag_delta();
             new_position.x += delta.x;
             new_position.y += delta.y;
+            
+            // If this is a parent being dragged, also move all its children
+            if ui_resources.drag_drop_state.dragging_entity == Some(entity) 
+                && !ui_resources.drag_drop_state.dragging_children.is_empty() {
+                self.update_children_positions(delta, world, ui_resources);
+            }
             
             // Update zone hover state during drag
             self.update_zone_hover_state(entity, new_position, world, ui_resources);
@@ -131,6 +150,9 @@ impl NodeRenderer {
             ui_resources.drag_drop_state.dragging_entity = None;
             ui_resources.drag_drop_state.hover_zone_entity = None;
             ui_resources.drag_drop_state.would_create_child_relationship = false;
+            ui_resources.drag_drop_state.dragging_children.clear();
+            ui_resources.drag_drop_state.children_initial_positions.clear();
+            ui_resources.drag_drop_state.parent_initial_position = None;
         }
         
         // Return position change if any occurred
@@ -406,6 +428,78 @@ impl NodeRenderer {
         ui_resources.drag_drop_state.would_create_child_relationship = would_create_relationship;
     }
     
+    /// Set up parent drag by collecting all descendants and their relative positions
+    fn setup_parent_drag(
+        &self,
+        parent_entity: Entity,
+        parent_position: Vec2,
+        world: &mut World,
+        ui_resources: &mut UiResources,
+    ) {
+        // Collect all descendants recursively
+        let descendants = self.collect_all_descendants(parent_entity, world);
+        
+        println!("🔄 Setting up parent drag for {:?} with {} descendants", 
+                parent_entity, descendants.len());
+        
+        // Store parent's initial position
+        ui_resources.drag_drop_state.parent_initial_position = Some(parent_position);
+        
+        // Store each child's current position
+        let mut children_query = world.query::<&GraphNode>();
+        for child_entity in &descendants {
+            if let Ok(child_graph_node) = children_query.get(world, *child_entity) {
+                ui_resources.drag_drop_state.children_initial_positions
+                    .insert(*child_entity, child_graph_node.position);
+                println!("  📍 Child {:?} at position {:?}", child_entity, child_graph_node.position);
+            }
+        }
+        
+        // Store the list of dragging children
+        ui_resources.drag_drop_state.dragging_children = descendants;
+    }
+    
+    /// Update positions of all children following the dragged parent
+    fn update_children_positions(
+        &self,
+        drag_delta: egui::Vec2,
+        world: &mut World,
+        ui_resources: &UiResources,
+    ) {
+        let mut nodes_query = world.query::<&mut GraphNode>();
+        let bevy_delta = Vec2::new(drag_delta.x, drag_delta.y);
+        
+        // Apply the same delta to all dragging children
+        for child_entity in &ui_resources.drag_drop_state.dragging_children {
+            if let Ok(mut child_graph_node) = nodes_query.get_mut(world, *child_entity) {
+                child_graph_node.position += bevy_delta;
+            }
+        }
+        
+        if !ui_resources.drag_drop_state.dragging_children.is_empty() {
+            println!("🚚 Moved {} children by delta {:?}", 
+                    ui_resources.drag_drop_state.dragging_children.len(), bevy_delta);
+        }
+    }
+    
+    /// Recursively collect all descendants of an entity
+    fn collect_all_descendants(&self, entity: Entity, world: &World) -> Vec<Entity> {
+        let mut descendants = Vec::new();
+        self.collect_descendants_recursive(entity, world, &mut descendants);
+        descendants
+    }
+    
+    /// Recursive helper to collect descendants
+    fn collect_descendants_recursive(&self, entity: Entity, world: &World, descendants: &mut Vec<Entity>) {
+        if let Some(children) = world.entity(entity).get::<Children>() {
+            for child in children.iter() {
+                descendants.push(child);
+                // Recursively collect grandchildren, great-grandchildren, etc.
+                self.collect_descendants_recursive(child, world, descendants);
+            }
+        }
+    }
+
     /// Apply parent-child relationship changes based on drag-drop result
     fn apply_drag_drop_changes(
         &self,

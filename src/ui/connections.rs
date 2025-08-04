@@ -23,7 +23,7 @@ impl ConnectionRenderer {
         let connections: Vec<Connection> = world.query::<&Connection>().iter(world).cloned().collect();
         
         // Get node positions and pins for connection endpoints  
-        let (node_positions, node_pins) = self.collect_node_data(world);
+        let (node_positions, _node_pins) = self.collect_node_data(world);
         
         // Draw each connection
         for connection in connections {

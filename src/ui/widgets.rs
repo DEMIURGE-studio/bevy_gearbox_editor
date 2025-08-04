@@ -366,7 +366,7 @@ impl Widget for ParentNodeBody {
 }
 
 /// Render the initial state connection pin (red pin on the left) as a standalone function
-fn render_initial_state_pin(ui: &mut Ui, entity: Entity) -> (Response, Option<Pos2>) {
+fn render_initial_state_pin(ui: &mut Ui, _entity: Entity) -> (Response, Option<Pos2>) {
     let mut pin_pos = None;
     
     let response = ui.allocate_ui_with_layout(

@@ -56,4 +56,10 @@ pub struct DragDropState {
     pub hover_zone_entity: Option<Entity>,
     /// Whether the current drag would result in a valid parent-child relationship
     pub would_create_child_relationship: bool,
+    /// All children entities that should follow the dragged parent
+    pub dragging_children: Vec<Entity>,
+    /// Initial positions of children relative to their dragged parent
+    pub children_initial_positions: HashMap<Entity, Vec2>,
+    /// Initial position of the dragged parent (for calculating deltas)
+    pub parent_initial_position: Option<Vec2>,
 }
