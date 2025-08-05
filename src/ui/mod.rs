@@ -88,7 +88,7 @@ fn render_graph_content(
     );
     
     // PASS 3: Draw connections (on top of unselected nodes, under canvas pin)
-    connection_renderer.render_connections(ui, world, &ui_resources.size_cache, &ui_resources.pin_cache, &ui_resources.connection_animations);
+    connection_renderer.render_connections(ui, world, &ui_resources.size_cache, &mut ui_resources.pin_cache, &ui_resources.connection_animations);
     
     // PASS 4: Render canvas initial state pin (on top of connections)  
     if root_entity != Entity::PLACEHOLDER {

@@ -19,50 +19,231 @@ pub struct NodeSizeCache {
     pub sizes: HashMap<Entity, egui::Vec2>,
 }
 
-/// Edge positions for a node
+/// Enum for specifying which edge of a node
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EdgeSide {
+    Top,
+    Right,
+    Bottom,
+    Left,
+}
+
+/// Edge positions for a node - supports multiple ports per edge
 #[derive(Debug, Clone)]
 pub struct EdgePins {
-    pub top: egui::Pos2,
-    pub right: egui::Pos2,
-    pub bottom: egui::Pos2,
-    pub left: egui::Pos2,
+    pub top: Vec<egui::Pos2>,
+    pub right: Vec<egui::Pos2>,
+    pub bottom: Vec<egui::Pos2>,
+    pub left: Vec<egui::Pos2>,
+    pub rect: egui::Rect, // Store the original rect for calculations
 }
 
 impl EdgePins {
     pub fn from_rect(rect: egui::Rect) -> Self {
+        // Start with single center pins per edge (will be updated with port distribution)
         let center = rect.center();
         Self {
-            top: egui::Pos2::new(center.x, rect.min.y),
-            right: egui::Pos2::new(rect.max.x, center.y),
-            bottom: egui::Pos2::new(center.x, rect.max.y),
-            left: egui::Pos2::new(rect.min.x, center.y),
+            top: vec![egui::Pos2::new(center.x, rect.min.y)],
+            right: vec![egui::Pos2::new(rect.max.x, center.y)],
+            bottom: vec![egui::Pos2::new(center.x, rect.max.y)],
+            left: vec![egui::Pos2::new(rect.min.x, center.y)],
+            rect,
+        }
+    }
+    
+    /// Distribute ports along an edge based on the number of connections needed
+    pub fn distribute_ports_on_edge(&mut self, edge: EdgeSide, count: usize) {
+        if count == 0 {
+            return;
+        }
+        
+        let ports = match edge {
+            EdgeSide::Top => {
+                let y = self.rect.min.y;
+                if count == 1 {
+                    vec![egui::Pos2::new(self.rect.center().x, y)]
+                } else {
+                    (0..count).map(|i| {
+                        let t = (i + 1) as f32 / (count + 1) as f32;
+                        let x = self.rect.min.x + t * self.rect.width();
+                        egui::Pos2::new(x, y)
+                    }).collect()
+                }
+            }
+            EdgeSide::Right => {
+                let x = self.rect.max.x;
+                if count == 1 {
+                    vec![egui::Pos2::new(x, self.rect.center().y)]
+                } else {
+                    (0..count).map(|i| {
+                        let t = (i + 1) as f32 / (count + 1) as f32;
+                        let y = self.rect.min.y + t * self.rect.height();
+                        egui::Pos2::new(x, y)
+                    }).collect()
+                }
+            }
+            EdgeSide::Bottom => {
+                let y = self.rect.max.y;
+                if count == 1 {
+                    vec![egui::Pos2::new(self.rect.center().x, y)]
+                } else {
+                    (0..count).map(|i| {
+                        let t = (i + 1) as f32 / (count + 1) as f32;
+                        let x = self.rect.min.x + t * self.rect.width();
+                        egui::Pos2::new(x, y)
+                    }).collect()
+                }
+            }
+            EdgeSide::Left => {
+                let x = self.rect.min.x;
+                if count == 1 {
+                    vec![egui::Pos2::new(x, self.rect.center().y)]
+                } else {
+                    (0..count).map(|i| {
+                        let t = (i + 1) as f32 / (count + 1) as f32;
+                        let y = self.rect.min.y + t * self.rect.height();
+                        egui::Pos2::new(x, y)
+                    }).collect()
+                }
+            }
+        };
+        
+        match edge {
+            EdgeSide::Top => self.top = ports,
+            EdgeSide::Right => self.right = ports,
+            EdgeSide::Bottom => self.bottom = ports,
+            EdgeSide::Left => self.left = ports,
+        }
+    }
+    
+    /// Distribute ports along an edge, separating incoming and outgoing connections
+    pub fn distribute_ports_on_edge_with_direction(&mut self, edge: EdgeSide, outgoing: &[Entity], incoming: &[Entity]) {
+        let outgoing_count = outgoing.len();
+        let incoming_count = incoming.len();
+        let total_count = outgoing_count + incoming_count;
+        
+        if total_count == 0 {
+            return;
+        }
+        
+        let ports = match edge {
+            EdgeSide::Top => {
+                let y = self.rect.min.y;
+                if total_count == 1 {
+                    vec![egui::Pos2::new(self.rect.center().x, y)]
+                } else {
+                    let mut all_ports = Vec::new();
+                    
+                    // Place outgoing connections first, then incoming
+                    for i in 0..outgoing_count {
+                        let t = (i + 1) as f32 / (total_count + 1) as f32;
+                        let x = self.rect.min.x + t * self.rect.width();
+                        all_ports.push(egui::Pos2::new(x, y));
+                    }
+                    
+                    for i in 0..incoming_count {
+                        let t = (outgoing_count + i + 1) as f32 / (total_count + 1) as f32;
+                        let x = self.rect.min.x + t * self.rect.width();
+                        all_ports.push(egui::Pos2::new(x, y));
+                    }
+                    
+                    all_ports
+                }
+            }
+            EdgeSide::Right => {
+                let x = self.rect.max.x;
+                if total_count == 1 {
+                    vec![egui::Pos2::new(x, self.rect.center().y)]
+                } else {
+                    let mut all_ports = Vec::new();
+                    
+                    // Place outgoing connections first, then incoming
+                    for i in 0..outgoing_count {
+                        let t = (i + 1) as f32 / (total_count + 1) as f32;
+                        let y = self.rect.min.y + t * self.rect.height();
+                        all_ports.push(egui::Pos2::new(x, y));
+                    }
+                    
+                    for i in 0..incoming_count {
+                        let t = (outgoing_count + i + 1) as f32 / (total_count + 1) as f32;
+                        let y = self.rect.min.y + t * self.rect.height();
+                        all_ports.push(egui::Pos2::new(x, y));
+                    }
+                    
+                    all_ports
+                }
+            }
+            EdgeSide::Bottom => {
+                let y = self.rect.max.y;
+                if total_count == 1 {
+                    vec![egui::Pos2::new(self.rect.center().x, y)]
+                } else {
+                    let mut all_ports = Vec::new();
+                    
+                    // Place outgoing connections first, then incoming
+                    for i in 0..outgoing_count {
+                        let t = (i + 1) as f32 / (total_count + 1) as f32;
+                        let x = self.rect.min.x + t * self.rect.width();
+                        all_ports.push(egui::Pos2::new(x, y));
+                    }
+                    
+                    for i in 0..incoming_count {
+                        let t = (outgoing_count + i + 1) as f32 / (total_count + 1) as f32;
+                        let x = self.rect.min.x + t * self.rect.width();
+                        all_ports.push(egui::Pos2::new(x, y));
+                    }
+                    
+                    all_ports
+                }
+            }
+            EdgeSide::Left => {
+                let x = self.rect.min.x;
+                if total_count == 1 {
+                    vec![egui::Pos2::new(x, self.rect.center().y)]
+                } else {
+                    let mut all_ports = Vec::new();
+                    
+                    // Place outgoing connections first, then incoming
+                    for i in 0..outgoing_count {
+                        let t = (i + 1) as f32 / (total_count + 1) as f32;
+                        let y = self.rect.min.y + t * self.rect.height();
+                        all_ports.push(egui::Pos2::new(x, y));
+                    }
+                    
+                    for i in 0..incoming_count {
+                        let t = (outgoing_count + i + 1) as f32 / (total_count + 1) as f32;
+                        let y = self.rect.min.y + t * self.rect.height();
+                        all_ports.push(egui::Pos2::new(x, y));
+                    }
+                    
+                    all_ports
+                }
+            }
+        };
+        
+        match edge {
+            EdgeSide::Top => self.top = ports,
+            EdgeSide::Right => self.right = ports,
+            EdgeSide::Bottom => self.bottom = ports,
+            EdgeSide::Left => self.left = ports,
         }
     }
     
     pub fn get_closest_pins(&self, other: &EdgePins) -> (egui::Pos2, egui::Pos2) {
-        let pins = [
-            (self.top, "top"),
-            (self.right, "right"),
-            (self.bottom, "bottom"),
-            (self.left, "left"),
-        ];
-        
-        let other_pins = [
-            (other.top, "top"),
-            (other.right, "right"),
-            (other.bottom, "bottom"),
-            (other.left, "left"),
-        ];
-        
         let mut min_distance = f32::INFINITY;
-        let mut best_pair = (self.top, other.top);
+        let mut best_pair = (self.top[0], other.top[0]); // Default fallback
         
-        for (from_pin, _) in &pins {
-            for (to_pin, _) in &other_pins {
-                let distance = from_pin.distance(*to_pin);
-                if distance < min_distance {
-                    min_distance = distance;
-                    best_pair = (*from_pin, *to_pin);
+        // Check all combinations of pins from all edges
+        for edge_pins in [&self.top, &self.right, &self.bottom, &self.left] {
+            for from_pin in edge_pins {
+                for other_edge_pins in [&other.top, &other.right, &other.bottom, &other.left] {
+                    for to_pin in other_edge_pins {
+                        let distance = from_pin.distance(*to_pin);
+                        if distance < min_distance {
+                            min_distance = distance;
+                            best_pair = (*from_pin, *to_pin);
+                        }
+                    }
                 }
             }
         }
@@ -70,70 +251,142 @@ impl EdgePins {
         best_pair
     }
     
-    /// Get the best source and target pins using a foolproof geometric algorithm
-    pub fn get_optimal_connection_pins(&self, target: &EdgePins) -> (egui::Pos2, egui::Pos2, ManhattanRoute) {
-        // Calculate centers for direction analysis
-        let source_center = egui::Pos2::new(
-            (self.left.x + self.right.x) / 2.0,
-            (self.top.y + self.bottom.y) / 2.0,
-        );
-        let target_center = egui::Pos2::new(
-            (target.left.x + target.right.x) / 2.0,
-            (target.top.y + target.bottom.y) / 2.0,
-        );
-        
-        // Calculate direction vector (no normalization needed)
-        let dx = target_center.x - source_center.x;
-        let dy = target_center.y - source_center.y;
-        
-        // Fallback to closest pins if nodes are at same position
-        if dx.abs() < 1.0 && dy.abs() < 1.0 {
-            let (source_pin, target_pin) = self.get_closest_pins(target);
-            return (source_pin, target_pin, ManhattanRoute::HorizontalFirst);
-        }
-        
-        // Stage 1: Find source pin closest to target center (distance-based)
-        let source_pins = [self.top, self.right, self.bottom, self.left];
-        let mut best_source_pin = self.top;
-        let mut min_distance = f32::INFINITY;
-        
-        for source_pin in &source_pins {
-            let distance = source_pin.distance(target_center);
-            if distance < min_distance {
-                min_distance = distance;
-                best_source_pin = *source_pin;
-            }
-        }
-        
-        // Stage 2: Determine target face based on primary direction
-        let (target_pin, route_type) = if dx.abs() > dy.abs() {
-            // Primary direction is horizontal
-            if dx > 0.0 {
-                // Going RIGHT → approach target's LEFT face with HORIZONTAL-FIRST routing
-                (target.left, ManhattanRoute::HorizontalFirst)
-            } else {
-                // Going LEFT → approach target's RIGHT face with HORIZONTAL-FIRST routing  
-                (target.right, ManhattanRoute::HorizontalFirst)
-            }
-        } else {
-            // Primary direction is vertical
-            if dy > 0.0 {
-                // Going DOWN → approach target's TOP face with VERTICAL-FIRST routing
-                (target.top, ManhattanRoute::VerticalFirst)
-            } else {
-                // Going UP → approach target's BOTTOM face with VERTICAL-FIRST routing
-                (target.bottom, ManhattanRoute::VerticalFirst)
-            }
-        };
-        
-        (best_source_pin, target_pin, route_type)
+    /// Get all pins from all edges (for backward compatibility)
+    pub fn get_all_pins(&self) -> Vec<egui::Pos2> {
+        let mut all_pins = Vec::new();
+        all_pins.extend(&self.top);
+        all_pins.extend(&self.right);
+        all_pins.extend(&self.bottom);
+        all_pins.extend(&self.left);
+        all_pins
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManhattanRoute {
     HorizontalFirst,
     VerticalFirst,
+}
+
+/// A routed connection with its chosen path
+#[derive(Debug, Clone)]
+pub struct RoutedConnection {
+    pub connection: crate::components::Connection,
+    pub route: ManhattanRoute,
+    pub from_pin: egui::Pos2,
+    pub to_pin: egui::Pos2,
+    pub corner: egui::Pos2, // The bend point
+}
+
+impl RoutedConnection {
+    pub fn new(connection: crate::components::Connection, route: ManhattanRoute, from_pin: egui::Pos2, to_pin: egui::Pos2) -> Self {
+        let corner = match route {
+            ManhattanRoute::HorizontalFirst => egui::Pos2::new(to_pin.x, from_pin.y),
+            ManhattanRoute::VerticalFirst => egui::Pos2::new(from_pin.x, to_pin.y),
+        };
+        
+        Self {
+            connection,
+            route,
+            from_pin,
+            to_pin,
+            corner,
+        }
+    }
+    
+    /// Check if this route crosses another routed connection
+    pub fn crosses(&self, other: &RoutedConnection) -> bool {
+        // Get the line segments for both connections
+        let self_segments = self.get_line_segments();
+        let other_segments = other.get_line_segments();
+        
+        // Check if any segment from self crosses any segment from other
+        for self_seg in &self_segments {
+            for other_seg in &other_segments {
+                if segments_intersect(*self_seg, *other_seg) {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+    
+    /// Get the line segments that make up this route
+    fn get_line_segments(&self) -> Vec<(egui::Pos2, egui::Pos2)> {
+        match self.route {
+            ManhattanRoute::HorizontalFirst => {
+                // from -> corner -> to
+                let mut segments = Vec::new();
+                if (self.from_pin.x - self.corner.x).abs() > 1.0 {
+                    segments.push((self.from_pin, self.corner));
+                }
+                if (self.corner.y - self.to_pin.y).abs() > 1.0 {
+                    segments.push((self.corner, self.to_pin));
+                }
+                if segments.is_empty() {
+                    segments.push((self.from_pin, self.to_pin));
+                }
+                segments
+            }
+            ManhattanRoute::VerticalFirst => {
+                // from -> corner -> to  
+                let mut segments = Vec::new();
+                if (self.from_pin.y - self.corner.y).abs() > 1.0 {
+                    segments.push((self.from_pin, self.corner));
+                }
+                if (self.corner.x - self.to_pin.x).abs() > 1.0 {
+                    segments.push((self.corner, self.to_pin));
+                }
+                if segments.is_empty() {
+                    segments.push((self.from_pin, self.to_pin));
+                }
+                segments
+            }
+        }
+    }
+}
+
+/// Check if two line segments intersect
+fn segments_intersect(seg1: (egui::Pos2, egui::Pos2), seg2: (egui::Pos2, egui::Pos2)) -> bool {
+    let (p1, p2) = seg1;
+    let (p3, p4) = seg2;
+    
+    // Check if segments share endpoints (not a crossing)
+    if p1 == p3 || p1 == p4 || p2 == p3 || p2 == p4 {
+        return false;
+    }
+    
+    // Use the orientation method to check intersection
+    fn orientation(p: egui::Pos2, q: egui::Pos2, r: egui::Pos2) -> i32 {
+        let val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+        if val.abs() < 1e-6 { 0 } // Collinear
+        else if val > 0.0 { 1 } // Clockwise
+        else { 2 } // Counterclockwise
+    }
+    
+    fn on_segment(p: egui::Pos2, q: egui::Pos2, r: egui::Pos2) -> bool {
+        q.x <= p.x.max(r.x) && q.x >= p.x.min(r.x) &&
+        q.y <= p.y.max(r.y) && q.y >= p.y.min(r.y)
+    }
+    
+    let o1 = orientation(p1, p2, p3);
+    let o2 = orientation(p1, p2, p4);
+    let o3 = orientation(p3, p4, p1);
+    let o4 = orientation(p3, p4, p2);
+    
+    // General case
+    if o1 != o2 && o3 != o4 {
+        return true;
+    }
+    
+    // Special cases for collinear points
+    if o1 == 0 && on_segment(p1, p3, p2) { return true; }
+    if o2 == 0 && on_segment(p1, p4, p2) { return true; }
+    if o3 == 0 && on_segment(p3, p1, p4) { return true; }
+    if o4 == 0 && on_segment(p3, p2, p4) { return true; }
+    
+    false
 }
 
 /// Resource to track actual pin positions for accurate connection drawing

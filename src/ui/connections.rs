@@ -16,20 +16,622 @@ impl ConnectionRenderer {
         &self,
         ui: &mut egui::Ui, 
         world: &mut World, 
-        size_cache: &NodeSizeCache, 
-        pin_cache: &PinPositionCache,
+        _size_cache: &NodeSizeCache, 
+        pin_cache: &mut PinPositionCache, // Changed to mutable for port distribution
         connection_animations: &ConnectionAnimations,
     ) {
         // Get all connections
         let connections: Vec<Connection> = world.query::<&Connection>().iter(world).cloned().collect();
         
-        // Get node positions and pins for connection endpoints  
-        let (node_positions, _node_pins) = self.collect_node_data(world);
+        // Distribute ports based on connections and create port assignments
+        let port_assignments = self.distribute_ports_for_connections(&connections, pin_cache);
         
-        // Draw each connection
-        for connection in connections {
-            self.draw_connection_line(ui, &connection, &node_positions, size_cache, pin_cache, connection_animations);
+        // Get node positions and pins for connection endpoints  
+        let (_node_positions, _node_pins) = self.collect_node_data(world);
+        
+        // Route connections with crossing avoidance using assigned ports
+        let routed_connections = self.route_connections_with_crossing_avoidance(&connections, pin_cache, &port_assignments);
+        
+        // Draw each routed connection
+        for routed_connection in routed_connections {
+            self.draw_routed_connection(ui, &routed_connection, connection_animations);
         }
+    }
+    
+    /// Enhanced greedy port assignment with lookahead to minimize crossings
+    /// Returns a map of connection -> (from_pin, to_pin) assignments
+    fn distribute_ports_for_connections(&self, connections: &[Connection], pin_cache: &mut PinPositionCache) -> std::collections::HashMap<(Entity, Entity), (egui::Pos2, egui::Pos2)> {
+        // Filter out initial state connections (they have special handling)
+        let regular_connections: Vec<_> = connections.iter()
+            .filter(|conn| conn.from_pin_index != usize::MAX)
+            .collect();
+        
+        if regular_connections.is_empty() {
+            return std::collections::HashMap::new();
+        }
+        
+        // Use enhanced greedy algorithm with lookahead
+        self.assign_ports_with_lookahead(&regular_connections, pin_cache)
+    }
+    
+    /// Determine which edges should be used for a connection
+    fn determine_connection_edges(&self, from_pins: &crate::resources::EdgePins, to_pins: &crate::resources::EdgePins) -> (crate::resources::EdgeSide, crate::resources::EdgeSide) {
+        // Simple heuristic: use the geometric relationship between node centers
+        let from_center = from_pins.rect.center();
+        let to_center = to_pins.rect.center();
+        
+        let dx = to_center.x - from_center.x;
+        let dy = to_center.y - from_center.y;
+        
+        if dx.abs() > dy.abs() {
+            // Primarily horizontal relationship
+            if dx > 0.0 {
+                (crate::resources::EdgeSide::Right, crate::resources::EdgeSide::Left) // from goes right, to receives from left
+            } else {
+                (crate::resources::EdgeSide::Left, crate::resources::EdgeSide::Right) // from goes left, to receives from right
+            }
+        } else {
+            // Primarily vertical relationship
+            if dy > 0.0 {
+                (crate::resources::EdgeSide::Bottom, crate::resources::EdgeSide::Top) // from goes down, to receives from top
+            } else {
+                (crate::resources::EdgeSide::Top, crate::resources::EdgeSide::Bottom) // from goes up, to receives from bottom
+            }
+        }
+    }
+    
+
+    /// Route connections with crossing avoidance using greedy algorithm
+    fn route_connections_with_crossing_avoidance(&self, connections: &[Connection], pin_cache: &PinPositionCache, port_assignments: &std::collections::HashMap<(Entity, Entity), (egui::Pos2, egui::Pos2)>) -> Vec<crate::resources::RoutedConnection> {
+        
+        let mut routed_connections = Vec::new();
+        
+        // Separate initial state connections (handle them specially)
+        let (initial_connections, regular_connections): (Vec<_>, Vec<_>) = connections.iter()
+            .partition(|conn| conn.from_pin_index == usize::MAX);
+        
+        // Handle initial state connections first (they have fixed routing)
+        for connection in initial_connections {
+            if let Some(routed) = self.route_initial_state_connection(connection, pin_cache) {
+                routed_connections.push(routed);
+            }
+        }
+        
+        // Sort regular connections by "constraint level" (most constrained first)
+        let mut sorted_connections = regular_connections;
+        sorted_connections.sort_by(|a, b| {
+            let constraint_a = self.calculate_connection_constraint(a, pin_cache);
+            let constraint_b = self.calculate_connection_constraint(b, pin_cache);
+            constraint_b.partial_cmp(&constraint_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        
+        // Route each connection greedily
+        for connection in sorted_connections {
+            if let Some(routed) = self.route_connection_with_crossing_avoidance(connection, &routed_connections, pin_cache, port_assignments) {
+                routed_connections.push(routed);
+            }
+        }
+        
+        routed_connections
+    }
+    
+    /// Route a single connection, choosing the route with fewer crossings
+    fn route_connection_with_crossing_avoidance(&self, connection: &Connection, existing_routes: &[RoutedConnection], pin_cache: &PinPositionCache, port_assignments: &std::collections::HashMap<(Entity, Entity), (egui::Pos2, egui::Pos2)>) -> Option<RoutedConnection> {
+        // Get assigned pins for this specific connection
+        let (from_pin, to_pin) = if let Some(&(from_pos, to_pos)) = port_assignments.get(&(connection.from_entity, connection.to_entity)) {
+            (from_pos, to_pos)
+        } else {
+            // Fallback to closest pins if no assignment found
+            let from_edge_pins = pin_cache.edge_pins.get(&connection.from_entity)?;
+            let to_edge_pins = pin_cache.edge_pins.get(&connection.to_entity)?;
+            from_edge_pins.get_closest_pins(to_edge_pins)
+        };
+        
+        // Try both routing options
+        let horizontal_route = crate::resources::RoutedConnection::new(connection.clone(), crate::resources::ManhattanRoute::HorizontalFirst, from_pin, to_pin);
+        let vertical_route = crate::resources::RoutedConnection::new(connection.clone(), crate::resources::ManhattanRoute::VerticalFirst, from_pin, to_pin);
+        
+        // Count crossings for each route
+        let horizontal_crossings = existing_routes.iter().filter(|existing| horizontal_route.crosses(existing)).count();
+        let vertical_crossings = existing_routes.iter().filter(|existing| vertical_route.crosses(existing)).count();
+        
+        // Choose the route with fewer crossings
+        if horizontal_crossings <= vertical_crossings {
+            Some(horizontal_route)
+        } else {
+            Some(vertical_route)
+        }
+    }
+    
+    /// Route an initial state connection (from root entity)
+    fn route_initial_state_connection(&self, connection: &Connection, pin_cache: &PinPositionCache) -> Option<RoutedConnection> {
+        // Initial state connections use a fixed pin position and closest target pin
+        let initial_pin_pos = egui::Pos2::new(20.0 + 6.0, 20.0 + 6.0); // Same as in draw_connection_line
+        
+        let to_edge_pins = pin_cache.edge_pins.get(&connection.to_entity)?;
+        let all_target_pins = to_edge_pins.get_all_pins();
+        
+        // Find closest target pin
+        let mut best_pin = all_target_pins.get(0).copied().unwrap_or_default();
+        let mut min_distance = f32::INFINITY;
+        
+        for pin in all_target_pins {
+            let distance = initial_pin_pos.distance(pin);
+            if distance < min_distance {
+                min_distance = distance;
+                best_pin = pin;
+            }
+        }
+        
+        // Always use horizontal-first for initial state connections
+        Some(crate::resources::RoutedConnection::new(connection.clone(), crate::resources::ManhattanRoute::HorizontalFirst, initial_pin_pos, best_pin))
+    }
+    
+    /// Calculate how constrained a connection is (higher = more constrained = route first)
+    fn calculate_connection_constraint(&self, connection: &Connection, pin_cache: &PinPositionCache) -> f32 {
+        let from_edge_pins = pin_cache.edge_pins.get(&connection.from_entity);
+        let to_edge_pins = pin_cache.edge_pins.get(&connection.to_entity);
+        
+        if let (Some(from_pins), Some(to_pins)) = (from_edge_pins, to_edge_pins) {
+            // Use distance as a simple constraint measure (longer connections are more constrained)
+            let (from_pin, to_pin) = from_pins.get_closest_pins(to_pins);
+            from_pin.distance(to_pin)
+        } else {
+            0.0
+        }
+    }
+    
+    /// Enhanced greedy algorithm with lookahead for optimal port assignment
+    fn assign_ports_with_lookahead(&self, connections: &[&Connection], pin_cache: &mut PinPositionCache) -> std::collections::HashMap<(Entity, Entity), (egui::Pos2, egui::Pos2)> {
+        let mut assignments = std::collections::HashMap::new();
+        let mut available_ports = self.initialize_available_ports(connections, pin_cache);
+        
+        // Sort connections by constraint level (most constrained first)
+        let mut sorted_connections = connections.to_vec();
+        sorted_connections.sort_by(|a, b| {
+            let constraint_a = self.calculate_port_constraint(a, &available_ports, pin_cache);
+            let constraint_b = self.calculate_port_constraint(b, &available_ports, pin_cache);
+            constraint_b.partial_cmp(&constraint_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        
+        // Assign ports greedily with lookahead
+        for (i, connection) in sorted_connections.iter().enumerate() {
+            let remaining_connections = &sorted_connections[i + 1..];
+            
+            if let Some(best_assignment) = self.find_best_port_assignment(
+                connection, 
+                &available_ports, 
+                &assignments, 
+                remaining_connections, 
+                pin_cache
+            ) {
+                // Make the assignment
+                assignments.insert((connection.from_entity, connection.to_entity), best_assignment);
+                
+                // Remove used ports from available pools
+                self.remove_used_ports(&mut available_ports, &best_assignment, connection, pin_cache);
+            }
+        }
+        
+        // Update the actual pin cache with the distributed ports
+        self.update_pin_cache_with_assignments(&assignments, connections, pin_cache);
+        
+        assignments
+    }
+    
+    /// Initialize available port pools for each entity edge
+    fn initialize_available_ports(&self, connections: &[&Connection], pin_cache: &PinPositionCache) -> std::collections::HashMap<(Entity, crate::resources::EdgeSide), Vec<egui::Pos2>> {
+        let mut available_ports = std::collections::HashMap::new();
+        let mut entity_edge_counts: std::collections::HashMap<(Entity, crate::resources::EdgeSide), usize> = std::collections::HashMap::new();
+        
+        // Count how many connections each edge needs to handle
+        for connection in connections {
+            if let (Some(from_pins), Some(to_pins)) = (
+                pin_cache.edge_pins.get(&connection.from_entity),
+                pin_cache.edge_pins.get(&connection.to_entity)
+            ) {
+                let (from_edge, to_edge) = self.determine_connection_edges(from_pins, to_pins);
+                
+                *entity_edge_counts.entry((connection.from_entity, from_edge)).or_insert(0) += 1;
+                *entity_edge_counts.entry((connection.to_entity, to_edge)).or_insert(0) += 1;
+            }
+        }
+        
+        // Generate port positions for each edge based on connection count
+        for ((entity, edge_side), count) in entity_edge_counts {
+            if let Some(edge_pins) = pin_cache.edge_pins.get(&entity) {
+                let ports = self.generate_ports_for_edge(&edge_pins.rect, edge_side, count);
+                available_ports.insert((entity, edge_side), ports);
+            }
+        }
+        
+        available_ports
+    }
+    
+    /// Generate evenly spaced port positions along an edge
+    fn generate_ports_for_edge(&self, rect: &egui::Rect, edge_side: crate::resources::EdgeSide, count: usize) -> Vec<egui::Pos2> {
+        if count == 0 {
+            return Vec::new();
+        }
+        
+        if count == 1 {
+            // Single port at center of edge
+            return vec![match edge_side {
+                crate::resources::EdgeSide::Top => egui::Pos2::new(rect.center().x, rect.min.y),
+                crate::resources::EdgeSide::Right => egui::Pos2::new(rect.max.x, rect.center().y),
+                crate::resources::EdgeSide::Bottom => egui::Pos2::new(rect.center().x, rect.max.y),
+                crate::resources::EdgeSide::Left => egui::Pos2::new(rect.min.x, rect.center().y),
+            }];
+        }
+        
+        // Multiple ports evenly distributed
+        let mut ports = Vec::new();
+        for i in 0..count {
+            let t = (i + 1) as f32 / (count + 1) as f32; // Avoid corners
+            let port = match edge_side {
+                crate::resources::EdgeSide::Top => {
+                    let x = rect.min.x + t * rect.width();
+                    egui::Pos2::new(x, rect.min.y)
+                }
+                crate::resources::EdgeSide::Right => {
+                    let y = rect.min.y + t * rect.height();
+                    egui::Pos2::new(rect.max.x, y)
+                }
+                crate::resources::EdgeSide::Bottom => {
+                    let x = rect.min.x + t * rect.width();
+                    egui::Pos2::new(x, rect.max.y)
+                }
+                crate::resources::EdgeSide::Left => {
+                    let y = rect.min.y + t * rect.height();
+                    egui::Pos2::new(rect.min.x, y)
+                }
+            };
+            ports.push(port);
+        }
+        ports
+    }
+    
+    /// Calculate how constrained a connection is for port assignment
+    fn calculate_port_constraint(&self, connection: &Connection, available_ports: &std::collections::HashMap<(Entity, crate::resources::EdgeSide), Vec<egui::Pos2>>, pin_cache: &PinPositionCache) -> f32 {
+        if let (Some(from_pins), Some(to_pins)) = (
+            pin_cache.edge_pins.get(&connection.from_entity),
+            pin_cache.edge_pins.get(&connection.to_entity)
+        ) {
+            let (from_edge, to_edge) = self.determine_connection_edges(from_pins, to_pins);
+            
+            let from_available = available_ports.get(&(connection.from_entity, from_edge)).map(|v| v.len()).unwrap_or(0);
+            let to_available = available_ports.get(&(connection.to_entity, to_edge)).map(|v| v.len()).unwrap_or(0);
+            
+            // Higher constraint = fewer available options
+            let constraint = 1.0 / ((from_available * to_available) as f32 + 1.0);
+            
+            // Add distance as secondary factor
+            let distance = from_pins.rect.center().distance(to_pins.rect.center());
+            constraint + distance * 0.001 // Small weight for distance
+        } else {
+            0.0
+        }
+    }
+    
+    /// Find the best port assignment for a connection considering future connections
+    fn find_best_port_assignment(
+        &self,
+        connection: &Connection,
+        available_ports: &std::collections::HashMap<(Entity, crate::resources::EdgeSide), Vec<egui::Pos2>>,
+        existing_assignments: &std::collections::HashMap<(Entity, Entity), (egui::Pos2, egui::Pos2)>,
+        remaining_connections: &[&Connection],
+        pin_cache: &PinPositionCache
+    ) -> Option<(egui::Pos2, egui::Pos2)> {
+        
+        if let (Some(from_pins), Some(to_pins)) = (
+            pin_cache.edge_pins.get(&connection.from_entity),
+            pin_cache.edge_pins.get(&connection.to_entity)
+        ) {
+            let (from_edge, to_edge) = self.determine_connection_edges(from_pins, to_pins);
+            
+            let from_ports = available_ports.get(&(connection.from_entity, from_edge))?;
+            let to_ports = available_ports.get(&(connection.to_entity, to_edge))?;
+            
+            let mut best_assignment = None;
+            let mut best_score = f32::INFINITY;
+            
+            // Try all combinations of available ports
+            for &from_port in from_ports {
+                for &to_port in to_ports {
+                    let score = self.score_port_assignment(
+                        (from_port, to_port),
+                        connection,
+                        existing_assignments,
+                        remaining_connections,
+                        available_ports,
+                        pin_cache
+                    );
+                    
+                    if score < best_score {
+                        best_score = score;
+                        best_assignment = Some((from_port, to_port));
+                    }
+                }
+            }
+            
+            best_assignment
+        } else {
+            None
+        }
+    }
+    
+    /// Score a potential port assignment (lower is better)
+    fn score_port_assignment(
+        &self,
+        assignment: (egui::Pos2, egui::Pos2),
+        connection: &Connection,
+        existing_assignments: &std::collections::HashMap<(Entity, Entity), (egui::Pos2, egui::Pos2)>,
+        remaining_connections: &[&Connection],
+        available_ports: &std::collections::HashMap<(Entity, crate::resources::EdgeSide), Vec<egui::Pos2>>,
+        pin_cache: &PinPositionCache
+    ) -> f32 {
+        let mut score = 0.0;
+        
+        // Create temporary routed connections for this assignment
+        let temp_route_h = crate::resources::RoutedConnection::new(
+            connection.clone(), 
+            crate::resources::ManhattanRoute::HorizontalFirst, 
+            assignment.0, 
+            assignment.1
+        );
+        let temp_route_v = crate::resources::RoutedConnection::new(
+            connection.clone(), 
+            crate::resources::ManhattanRoute::VerticalFirst, 
+            assignment.0, 
+            assignment.1
+        );
+        
+        // Count crossings with existing assignments
+        for ((_from, _to), &(existing_from, existing_to)) in existing_assignments {
+            let existing_route_h = crate::resources::RoutedConnection::new(
+                Connection {
+                    from_entity: *_from,
+                    to_entity: *_to,
+                    connection_type: String::new(), // Placeholder
+                    from_pin_index: 0,
+                    to_pin_index: 0,
+                },
+                crate::resources::ManhattanRoute::HorizontalFirst,
+                existing_from,
+                existing_to
+            );
+            
+            let existing_route_v = crate::resources::RoutedConnection::new(
+                Connection {
+                    from_entity: *_from,
+                    to_entity: *_to,
+                    connection_type: String::new(), // Placeholder
+                    from_pin_index: 0,
+                    to_pin_index: 0,
+                },
+                crate::resources::ManhattanRoute::VerticalFirst,
+                existing_from,
+                existing_to
+            );
+            
+            // Count crossings for both routing options
+            let h_crossings: f32 = if temp_route_h.crosses(&existing_route_h) { 1.0 } else { 0.0 } +
+                                  if temp_route_h.crosses(&existing_route_v) { 1.0 } else { 0.0 };
+            let v_crossings: f32 = if temp_route_v.crosses(&existing_route_h) { 1.0 } else { 0.0 } +
+                                  if temp_route_v.crosses(&existing_route_v) { 1.0 } else { 0.0 };
+            
+            // Add the minimum crossings to score
+            score += h_crossings.min(v_crossings);
+        }
+        
+        // Lookahead: estimate impact on future connections
+        let future_impact = self.estimate_future_impact(
+            assignment,
+            remaining_connections,
+            available_ports,
+            pin_cache
+        );
+        score += future_impact * 0.5; // Weight future impact less than immediate crossings
+        
+        // Add distance penalty (prefer shorter connections)
+        let distance = assignment.0.distance(assignment.1);
+        score += distance * 0.0001; // Very small weight for distance
+        
+        score
+    }
+    
+    /// Estimate how this assignment might impact future connections
+    fn estimate_future_impact(
+        &self,
+        assignment: (egui::Pos2, egui::Pos2),
+        remaining_connections: &[&Connection],
+        available_ports: &std::collections::HashMap<(Entity, crate::resources::EdgeSide), Vec<egui::Pos2>>,
+        pin_cache: &PinPositionCache
+    ) -> f32 {
+        let mut impact = 0.0;
+        
+        // Create routes for this assignment
+        let temp_route_h = crate::resources::RoutedConnection::new(
+            Connection {
+                from_entity: bevy::prelude::Entity::PLACEHOLDER,
+                to_entity: bevy::prelude::Entity::PLACEHOLDER,
+                connection_type: String::new(),
+                from_pin_index: 0,
+                to_pin_index: 0,
+            },
+            crate::resources::ManhattanRoute::HorizontalFirst,
+            assignment.0,
+            assignment.1
+        );
+        
+        // For each remaining connection, estimate how many options would cross with this assignment
+        for future_conn in remaining_connections {
+            if let (Some(from_pins), Some(to_pins)) = (
+                pin_cache.edge_pins.get(&future_conn.from_entity),
+                pin_cache.edge_pins.get(&future_conn.to_entity)
+            ) {
+                let (from_edge, to_edge) = self.determine_connection_edges(from_pins, to_pins);
+                
+                if let (Some(future_from_ports), Some(future_to_ports)) = (
+                    available_ports.get(&(future_conn.from_entity, from_edge)),
+                    available_ports.get(&(future_conn.to_entity, to_edge))
+                ) {
+                    let mut crossing_options = 0;
+                    let total_options = future_from_ports.len() * future_to_ports.len();
+                    
+                    for &future_from in future_from_ports {
+                        for &future_to in future_to_ports {
+                            let future_route = crate::resources::RoutedConnection::new(
+                                (*future_conn).clone(),
+                                crate::resources::ManhattanRoute::HorizontalFirst,
+                                future_from,
+                                future_to
+                            );
+                            
+                            if temp_route_h.crosses(&future_route) {
+                                crossing_options += 1;
+                            }
+                        }
+                    }
+                    
+                    // Add penalty based on how many future options we're blocking
+                    if total_options > 0 {
+                        impact += crossing_options as f32 / total_options as f32;
+                    }
+                }
+            }
+        }
+        
+        impact
+    }
+    
+    /// Remove used ports from available pools
+    fn remove_used_ports(
+        &self, 
+        available_ports: &mut std::collections::HashMap<(Entity, crate::resources::EdgeSide), Vec<egui::Pos2>>, 
+        assignment: &(egui::Pos2, egui::Pos2), 
+        connection: &Connection,
+        pin_cache: &PinPositionCache
+    ) {
+        if let (Some(from_pins), Some(to_pins)) = (
+            pin_cache.edge_pins.get(&connection.from_entity),
+            pin_cache.edge_pins.get(&connection.to_entity)
+        ) {
+            let (from_edge, to_edge) = self.determine_connection_edges(from_pins, to_pins);
+            
+            // Remove the used ports from available pools
+            if let Some(from_ports) = available_ports.get_mut(&(connection.from_entity, from_edge)) {
+                from_ports.retain(|&p| (p.x - assignment.0.x).abs() > 1.0 || (p.y - assignment.0.y).abs() > 1.0);
+            }
+            if let Some(to_ports) = available_ports.get_mut(&(connection.to_entity, to_edge)) {
+                to_ports.retain(|&p| (p.x - assignment.1.x).abs() > 1.0 || (p.y - assignment.1.y).abs() > 1.0);
+            }
+        }
+    }
+    
+    /// Update the pin cache with the final port assignments
+    fn update_pin_cache_with_assignments(
+        &self, 
+        assignments: &std::collections::HashMap<(Entity, Entity), (egui::Pos2, egui::Pos2)>, 
+        connections: &[&Connection], 
+        pin_cache: &mut PinPositionCache
+    ) {
+        // Group assignments by entity and edge
+        let mut entity_edge_ports: std::collections::HashMap<(Entity, crate::resources::EdgeSide), Vec<egui::Pos2>> = std::collections::HashMap::new();
+        
+        for connection in connections {
+            if let Some(&(from_pos, to_pos)) = assignments.get(&(connection.from_entity, connection.to_entity)) {
+                if let (Some(from_pins), Some(to_pins)) = (
+                    pin_cache.edge_pins.get(&connection.from_entity),
+                    pin_cache.edge_pins.get(&connection.to_entity)
+                ) {
+                    let (from_edge, to_edge) = self.determine_connection_edges(from_pins, to_pins);
+                    
+                    entity_edge_ports.entry((connection.from_entity, from_edge)).or_default().push(from_pos);
+                    entity_edge_ports.entry((connection.to_entity, to_edge)).or_default().push(to_pos);
+                }
+            }
+        }
+        
+        // Update the pin cache
+        for ((entity, edge_side), mut ports) in entity_edge_ports {
+            if let Some(edge_pins) = pin_cache.edge_pins.get_mut(&entity) {
+                // Remove duplicates and sort for consistency
+                ports.sort_by(|a, b| {
+                    match edge_side {
+                        crate::resources::EdgeSide::Top | crate::resources::EdgeSide::Bottom => a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal),
+                        crate::resources::EdgeSide::Left | crate::resources::EdgeSide::Right => a.y.partial_cmp(&b.y).unwrap_or(std::cmp::Ordering::Equal),
+                    }
+                });
+                ports.dedup();
+                
+                match edge_side {
+                    crate::resources::EdgeSide::Top => edge_pins.top = ports,
+                    crate::resources::EdgeSide::Right => edge_pins.right = ports,
+                    crate::resources::EdgeSide::Bottom => edge_pins.bottom = ports,
+                    crate::resources::EdgeSide::Left => edge_pins.left = ports,
+                }
+            }
+        }
+    }
+    
+    /// Draw a routed connection with its chosen route
+    fn draw_routed_connection(&self, ui: &mut egui::Ui, routed_connection: &crate::resources::RoutedConnection, connection_animations: &ConnectionAnimations) {
+        // Get animated color for this connection
+        let connection_color = connection_animations.get_connection_color(
+            routed_connection.connection.from_entity, 
+            routed_connection.connection.to_entity
+        );
+        
+        // Draw the connection using the chosen route
+        self.draw_manhattan_connection_with_route(
+            ui, 
+            routed_connection.from_pin, 
+            routed_connection.to_pin, 
+            &routed_connection.connection.connection_type, 
+            connection_color, 
+            routed_connection.route
+        );
+    }
+    
+    /// Draw Manhattan connection with specified route
+    fn draw_manhattan_connection_with_route(&self, ui: &mut egui::Ui, from: egui::Pos2, to: egui::Pos2, _label: &str, color: egui::Color32, route: crate::resources::ManhattanRoute) {
+        let stroke = egui::Stroke::new(2.0, color);
+        let corner_radius = 10.0;
+        
+        // If the points are aligned (same x or same y), just draw a straight line
+        if (from.x - to.x).abs() <= 1.0 || (from.y - to.y).abs() <= 1.0 {
+            ui.painter().line_segment([from, to], stroke);
+            self.draw_arrow_head(ui, from, to, from, color); // Use from as corner for straight lines
+            return;
+        }
+        
+        // Calculate Manhattan routing based on route choice
+        let corner = match route {
+            crate::resources::ManhattanRoute::HorizontalFirst => egui::Pos2::new(to.x, from.y),
+            crate::resources::ManhattanRoute::VerticalFirst => egui::Pos2::new(from.x, to.y),
+        };
+        
+        // Calculate distances for each segment
+        let horizontal_distance = (corner.x - from.x).abs();
+        let vertical_distance = (to.y - corner.y).abs();
+        
+        // Only add rounded corners if both segments are long enough
+        if horizontal_distance > corner_radius * 2.0 && vertical_distance > corner_radius * 2.0 {
+            // Draw with rounded corner
+            self.draw_rounded_manhattan_path(ui, from, corner, to, corner_radius, stroke);
+        } else {
+            // Fall back to sharp corners if segments are too short
+            if horizontal_distance > 1.0 {
+                ui.painter().line_segment([from, corner], stroke);
+            }
+            if vertical_distance > 1.0 {
+                ui.painter().line_segment([corner, to], stroke);
+            }
+        }
+        
+        // Draw arrow head at the target point
+        self.draw_arrow_head(ui, from, to, corner, color);
     }
 
     /// Collect node positions and pin data for connection rendering
@@ -47,7 +649,8 @@ impl ConnectionRenderer {
         (node_positions, node_pins)
     }
 
-    /// Draw a single connection line between closest edge pins
+    /// Draw a single connection line between closest edge pins (unused after crossing avoidance refactor)
+    #[allow(dead_code)]
     fn draw_connection_line(
         &self,
         ui: &mut egui::Ui,
@@ -65,12 +668,12 @@ impl ConnectionRenderer {
             // Get edge pins for target node
             let Some(to_edge_pins) = pin_cache.edge_pins.get(&connection.to_entity) else { return; };
             
-            // Find closest edge pin on target
-            let pins = [to_edge_pins.top, to_edge_pins.right, to_edge_pins.bottom, to_edge_pins.left];
+            // Find closest edge pin on target from all available pins
+            let all_target_pins = to_edge_pins.get_all_pins();
             let mut min_distance = f32::INFINITY;
-            let mut best_pin = to_edge_pins.top;
+            let mut best_pin = all_target_pins.get(0).copied().unwrap_or_default();
             
-            for pin in pins {
+            for pin in all_target_pins {
                 let distance = initial_pin_pos.distance(pin);
                 if distance < min_distance {
                     min_distance = distance;
@@ -90,7 +693,8 @@ impl ConnectionRenderer {
         let Some(from_edge_pins) = pin_cache.edge_pins.get(&connection.from_entity) else { return; };
         let Some(to_edge_pins) = pin_cache.edge_pins.get(&connection.to_entity) else { return; };
         
-        // Find the closest pair of edge pins
+        // For now, use closest pins logic with the new distributed ports
+        // TODO: In the future, this should use specific assigned ports based on connection index
         let (from_pin_pos, to_pin_pos) = from_edge_pins.get_closest_pins(to_edge_pins);
         
         // Get animated color for this connection
@@ -141,7 +745,8 @@ impl ConnectionRenderer {
         )
     }
 
-    /// Draw a Manhattan-style connection between two points with rounded corners and arrow head
+    /// Draw a Manhattan-style connection between two points with rounded corners and arrow head (unused after crossing avoidance refactor)
+    #[allow(dead_code)]
     fn draw_manhattan_connection(&self, ui: &mut egui::Ui, from: egui::Pos2, to: egui::Pos2, _label: &str, color: egui::Color32) {
         let stroke = egui::Stroke::new(2.0, color);
         let corner_radius = 10.0;
