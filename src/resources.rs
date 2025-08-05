@@ -19,11 +19,127 @@ pub struct NodeSizeCache {
     pub sizes: HashMap<Entity, egui::Vec2>,
 }
 
+/// Edge positions for a node
+#[derive(Debug, Clone)]
+pub struct EdgePins {
+    pub top: egui::Pos2,
+    pub right: egui::Pos2,
+    pub bottom: egui::Pos2,
+    pub left: egui::Pos2,
+}
+
+impl EdgePins {
+    pub fn from_rect(rect: egui::Rect) -> Self {
+        let center = rect.center();
+        Self {
+            top: egui::Pos2::new(center.x, rect.min.y),
+            right: egui::Pos2::new(rect.max.x, center.y),
+            bottom: egui::Pos2::new(center.x, rect.max.y),
+            left: egui::Pos2::new(rect.min.x, center.y),
+        }
+    }
+    
+    pub fn get_closest_pins(&self, other: &EdgePins) -> (egui::Pos2, egui::Pos2) {
+        let pins = [
+            (self.top, "top"),
+            (self.right, "right"),
+            (self.bottom, "bottom"),
+            (self.left, "left"),
+        ];
+        
+        let other_pins = [
+            (other.top, "top"),
+            (other.right, "right"),
+            (other.bottom, "bottom"),
+            (other.left, "left"),
+        ];
+        
+        let mut min_distance = f32::INFINITY;
+        let mut best_pair = (self.top, other.top);
+        
+        for (from_pin, _) in &pins {
+            for (to_pin, _) in &other_pins {
+                let distance = from_pin.distance(*to_pin);
+                if distance < min_distance {
+                    min_distance = distance;
+                    best_pair = (*from_pin, *to_pin);
+                }
+            }
+        }
+        
+        best_pair
+    }
+    
+    /// Get the best source and target pins using a foolproof geometric algorithm
+    pub fn get_optimal_connection_pins(&self, target: &EdgePins) -> (egui::Pos2, egui::Pos2, ManhattanRoute) {
+        // Calculate centers for direction analysis
+        let source_center = egui::Pos2::new(
+            (self.left.x + self.right.x) / 2.0,
+            (self.top.y + self.bottom.y) / 2.0,
+        );
+        let target_center = egui::Pos2::new(
+            (target.left.x + target.right.x) / 2.0,
+            (target.top.y + target.bottom.y) / 2.0,
+        );
+        
+        // Calculate direction vector (no normalization needed)
+        let dx = target_center.x - source_center.x;
+        let dy = target_center.y - source_center.y;
+        
+        // Fallback to closest pins if nodes are at same position
+        if dx.abs() < 1.0 && dy.abs() < 1.0 {
+            let (source_pin, target_pin) = self.get_closest_pins(target);
+            return (source_pin, target_pin, ManhattanRoute::HorizontalFirst);
+        }
+        
+        // Stage 1: Find source pin closest to target center (distance-based)
+        let source_pins = [self.top, self.right, self.bottom, self.left];
+        let mut best_source_pin = self.top;
+        let mut min_distance = f32::INFINITY;
+        
+        for source_pin in &source_pins {
+            let distance = source_pin.distance(target_center);
+            if distance < min_distance {
+                min_distance = distance;
+                best_source_pin = *source_pin;
+            }
+        }
+        
+        // Stage 2: Determine target face based on primary direction
+        let (target_pin, route_type) = if dx.abs() > dy.abs() {
+            // Primary direction is horizontal
+            if dx > 0.0 {
+                // Going RIGHT → approach target's LEFT face with HORIZONTAL-FIRST routing
+                (target.left, ManhattanRoute::HorizontalFirst)
+            } else {
+                // Going LEFT → approach target's RIGHT face with HORIZONTAL-FIRST routing  
+                (target.right, ManhattanRoute::HorizontalFirst)
+            }
+        } else {
+            // Primary direction is vertical
+            if dy > 0.0 {
+                // Going DOWN → approach target's TOP face with VERTICAL-FIRST routing
+                (target.top, ManhattanRoute::VerticalFirst)
+            } else {
+                // Going UP → approach target's BOTTOM face with VERTICAL-FIRST routing
+                (target.bottom, ManhattanRoute::VerticalFirst)
+            }
+        };
+        
+        (best_source_pin, target_pin, route_type)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ManhattanRoute {
+    HorizontalFirst,
+    VerticalFirst,
+}
+
 /// Resource to track actual pin positions for accurate connection drawing
 #[derive(Resource, Default)]
 pub struct PinPositionCache {
-    pub input_pins: HashMap<Entity, egui::Pos2>,
-    pub output_pins: HashMap<(Entity, usize), egui::Pos2>, // (entity, pin_index) -> position
+    pub edge_pins: HashMap<Entity, EdgePins>,
 }
 
 /// Resource to track component addition dialog state

@@ -289,38 +289,28 @@ impl NodeRenderer {
         // Create a child UI at the specified position
         let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(node_rect).layout(egui::Layout::top_down(egui::Align::Min)));
         
-        // Capture child UI min_rect before entering the closure
-        let child_ui_min = child_ui.min_rect().min;
+        // Capture child UI min_rect before entering the closure (unused after edge pin refactor)
+        let _child_ui_min = child_ui.min_rect().min;
         
         // Render the frame and widget in the child UI
         let frame_response = frame.show(&mut child_ui, |ui| {
-            let widget_response = NodeBody::new(
-                entity,
-                display_name,
-                transitions,
-            ).show(ui, world);
-            
-            // Update pin caches with widget data - convert to parent UI coordinates
-            if let Some(input_pos) = widget_response.input_pin_pos {
-                // Convert child UI coordinates to parent UI coordinates
-                let parent_pos = ui_pos + (input_pos - child_ui_min);
-                ui_resources.pin_cache.input_pins.insert(entity, parent_pos);
-            }
-            
-            // Process output pins
-            let output_positions = widget_response.output_pin_positions;
-            for ((pin_entity, pin_index), pin_pos) in output_positions {
-                // Convert child UI coordinates to parent UI coordinates
-                let parent_pos = ui_pos + (pin_pos - child_ui_min);
-                ui_resources.pin_cache.output_pins.insert((pin_entity, pin_index), parent_pos);
-            }
-            
+                let widget_response = NodeBody::new(
+                    entity,
+                    display_name,
+                    transitions,
+                ).show(ui, world);
+                
             widget_response.response
-        });
-        
-        // Store the actual measured size for interactions
-        let measured_size = frame_response.response.rect.size();
-        ui_resources.size_cache.sizes.insert(entity, measured_size);
+            });
+            
+            // Store the actual measured size for interactions
+            let measured_size = frame_response.response.rect.size();
+            ui_resources.size_cache.sizes.insert(entity, measured_size);
+            
+            // Calculate edge pins for the entire node area using frame size (not just widget)
+            let node_rect = egui::Rect::from_min_size(ui_pos, frame_response.response.rect.size());
+            let edge_pins = crate::resources::EdgePins::from_rect(node_rect);
+            ui_resources.pin_cache.edge_pins.insert(entity, edge_pins);
     }
 
     /// Render a parent node with its zone background using relative positioning
@@ -384,8 +374,8 @@ impl NodeRenderer {
         
         let mut header_ui = ui.new_child(egui::UiBuilder::new().max_rect(header_rect).layout(egui::Layout::top_down(egui::Align::Min)));
         
-        // Capture header UI min_rect before entering the closure
-        let header_ui_min = header_ui.min_rect().min;
+        // Capture header UI min_rect before entering the closure (unused after edge pin refactor)
+        let _header_ui_min = header_ui.min_rect().min;
         
         // Use a frame for the header to make it stand out
         let header_fill_color = self.get_node_fill_color(entity, &ui_resources.transition_state, world);
@@ -402,25 +392,16 @@ impl NodeRenderer {
                 initial_state_target,
             ).show(ui, world);
             
-            // Update pin caches with widget data - convert to parent UI coordinates
-            if let Some(input_pos) = widget_response.input_pin_pos {
-                let parent_pos = header_pos + (input_pos - header_ui_min);
-                ui_resources.pin_cache.input_pins.insert(entity, parent_pos);
-            }
-            
-            // Process output pins
-            let output_positions = widget_response.output_pin_positions;
-            for ((pin_entity, pin_index), pin_pos) in output_positions {
-                let parent_pos = header_pos + (pin_pos - header_ui_min);
-                ui_resources.pin_cache.output_pins.insert((pin_entity, pin_index), parent_pos);
-            }
-            
             widget_response.response
         });
         
         // Store the header size for interactions (not the full zone)
         let measured_size = frame_response.response.rect.size();
         ui_resources.size_cache.sizes.insert(entity, measured_size);
+        
+        // Calculate edge pins for the entire zone (not just the header)
+        let edge_pins = crate::resources::EdgePins::from_rect(zone_rect);
+        ui_resources.pin_cache.edge_pins.insert(entity, edge_pins);
     }
 
 

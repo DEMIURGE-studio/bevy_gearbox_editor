@@ -166,8 +166,13 @@ fn render_canvas_initial_state_pin_in_graph(
         egui::Color32::from_rgb(255, 100, 100), // Red for initial state
     );
     
-    // Cache the pin position for connection rendering (using special index usize::MAX for initial state) 
-    ui_resources.pin_cache.output_pins.insert((root_entity, usize::MAX), pin_center);
+    // Cache the special initial state pin position (for connections from root to children)
+    // We'll handle this specially in the connections system
+    
+    // Also create edge pins for the root entity (treat the entire canvas as the root's bounds)
+    let canvas_rect = ui.available_rect_before_wrap();
+    let root_edge_pins = crate::resources::EdgePins::from_rect(canvas_rect);
+    ui_resources.pin_cache.edge_pins.insert(root_entity, root_edge_pins);
     
     // Draw the label next to the pin
     let label_pos = pin_pos + egui::Vec2::new(pin_radius * 2.0 + 10.0, 0.0);
