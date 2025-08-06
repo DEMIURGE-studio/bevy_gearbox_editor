@@ -127,9 +127,38 @@ impl ConnectionRenderer {
             from_edge_pins.get_closest_pins(to_edge_pins)
         };
         
-        // Try both routing options
-        let horizontal_route = crate::resources::RoutedConnection::new(connection.clone(), crate::resources::ManhattanRoute::HorizontalFirst, from_pin, to_pin);
-        let vertical_route = crate::resources::RoutedConnection::new(connection.clone(), crate::resources::ManhattanRoute::VerticalFirst, from_pin, to_pin);
+        // Determine edge sides for this connection
+        let from_edge_pins = pin_cache.edge_pins.get(&connection.from_entity)?;
+        let to_edge_pins = pin_cache.edge_pins.get(&connection.to_entity)?;
+        let (from_edge, to_edge) = self.determine_connection_edges(from_edge_pins, to_edge_pins);
+        
+        // Determine the best routing strategy based on geometry and constraints
+        let shape = self.determine_routing_strategy(connection, existing_routes, from_pin, to_pin, from_edge, to_edge);
+        
+        // Calculate stagger offset based on parallel connections
+        let stagger_offset = self.calculate_stagger_offset(connection, existing_routes, from_pin, to_pin, from_edge, to_edge);
+        
+        // Try both routing options with the determined shape
+        let horizontal_route = crate::resources::RoutedConnection::new_with_edges(
+            connection.clone(), 
+            crate::resources::ManhattanRoute::HorizontalFirst, 
+            shape,
+            from_pin, 
+            to_pin,
+            from_edge,
+            to_edge,
+            stagger_offset
+        );
+        let vertical_route = crate::resources::RoutedConnection::new_with_edges(
+            connection.clone(), 
+            crate::resources::ManhattanRoute::VerticalFirst, 
+            shape,
+            from_pin, 
+            to_pin,
+            from_edge,
+            to_edge,
+            stagger_offset
+        );
         
         // Count crossings for each route
         let horizontal_crossings = existing_routes.iter().filter(|existing| horizontal_route.crosses(existing)).count();
@@ -141,6 +170,116 @@ impl ConnectionRenderer {
         } else {
             Some(vertical_route)
         }
+    }
+    
+    /// Determine the best routing strategy based on geometry and constraints
+    fn determine_routing_strategy(
+        &self,
+        _connection: &Connection,
+        existing_routes: &[RoutedConnection],
+        from_pin: egui::Pos2,
+        to_pin: egui::Pos2,
+        from_edge: crate::resources::EdgeSide,
+        to_edge: crate::resources::EdgeSide,
+    ) -> crate::resources::ConnectionShape {
+        let dx = to_pin.x - from_pin.x;
+        let dy = to_pin.y - from_pin.y;
+        let distance = from_pin.distance(to_pin);
+        
+        // Check if nodes are closely aligned (within 20px tolerance)
+        let is_horizontally_aligned = dy.abs() < 20.0;
+        let is_vertically_aligned = dx.abs() < 20.0;
+        
+        // Check if edges are directly opposite and aligned
+        let is_direct_opposite = self.are_opposite_edges(from_edge, to_edge);
+        
+        // 1. STRAIGHT LINE: Use for closely aligned nodes with opposite edges
+        if (is_horizontally_aligned || is_vertically_aligned) && is_direct_opposite {
+            return crate::resources::ConnectionShape::Straight;
+        }
+        
+        // 2. L-SHAPE: Use for simple cases with good separation
+        let is_good_l_shape_candidate = distance > 80.0 && 
+            !self.are_same_edge_side(from_edge, to_edge) &&
+            !is_direct_opposite;
+        
+        // Check if L-shape would create a clean path without tight turns
+        let l_shape_has_good_segments = match (from_edge, to_edge) {
+            // Horizontal-first L-shape
+            (crate::resources::EdgeSide::Right, crate::resources::EdgeSide::Left) |
+            (crate::resources::EdgeSide::Left, crate::resources::EdgeSide::Right) => {
+                dx.abs() > 40.0 && dy.abs() > 40.0
+            }
+            // Vertical-first L-shape  
+            (crate::resources::EdgeSide::Top, crate::resources::EdgeSide::Bottom) |
+            (crate::resources::EdgeSide::Bottom, crate::resources::EdgeSide::Top) => {
+                dx.abs() > 40.0 && dy.abs() > 40.0
+            }
+            _ => dx.abs() > 40.0 && dy.abs() > 40.0
+        };
+        
+        if is_good_l_shape_candidate && l_shape_has_good_segments {
+            //return crate::resources::ConnectionShape::LShape;
+        }
+        
+        // 3. S-SHAPE: Use for complex cases, close nodes, or same-side connections
+        let needs_s_shape = 
+            distance < 80.0 ||  // Close nodes need S-shape for clean routing
+            self.are_same_edge_side(from_edge, to_edge) || // Same side always needs S-shape
+            !l_shape_has_good_segments; // Poor L-shape geometry
+        
+        // Count parallel connections for staggering decision
+        let parallel_count = existing_routes.iter()
+            .filter(|route| {
+                route.from_edge == from_edge && route.to_edge == to_edge &&
+                (route.from_pin.distance(from_pin) < 50.0 || route.to_pin.distance(to_pin) < 50.0)
+            })
+            .count();
+        
+        if needs_s_shape || parallel_count > 1 {
+            crate::resources::ConnectionShape::SShape
+        } else {
+            crate::resources::ConnectionShape::SShape
+            //crate::resources::ConnectionShape::LShape
+        }
+    }
+    
+    /// Check if two edges are on the same side of their respective nodes
+    fn are_same_edge_side(&self, edge1: crate::resources::EdgeSide, edge2: crate::resources::EdgeSide) -> bool {
+        edge1 == edge2
+    }
+    
+    /// Check if two edges are opposite (top/bottom or left/right)
+    fn are_opposite_edges(&self, edge1: crate::resources::EdgeSide, edge2: crate::resources::EdgeSide) -> bool {
+        matches!(
+            (edge1, edge2),
+            (crate::resources::EdgeSide::Top, crate::resources::EdgeSide::Bottom) |
+            (crate::resources::EdgeSide::Bottom, crate::resources::EdgeSide::Top) |
+            (crate::resources::EdgeSide::Left, crate::resources::EdgeSide::Right) |
+            (crate::resources::EdgeSide::Right, crate::resources::EdgeSide::Left)
+        )
+    }
+    
+    /// Calculate stagger offset for bend points to avoid overlapping parallel connections
+    fn calculate_stagger_offset(
+        &self,
+        _connection: &Connection,
+        existing_routes: &[RoutedConnection],
+        from_pin: egui::Pos2,
+        to_pin: egui::Pos2,
+        from_edge: crate::resources::EdgeSide,
+        to_edge: crate::resources::EdgeSide,
+    ) -> f32 {
+        // Find how many existing routes use similar paths
+        let similar_routes: Vec<_> = existing_routes.iter()
+            .filter(|route| {
+                route.from_edge == from_edge && route.to_edge == to_edge &&
+                (route.from_pin.distance(from_pin) < 100.0 && route.to_pin.distance(to_pin) < 100.0)
+            })
+            .collect();
+        
+        // Stagger by 15px per similar route
+        similar_routes.len() as f32 * 15.0
     }
     
     /// Route an initial state connection (from root entity)
@@ -583,55 +722,248 @@ impl ConnectionRenderer {
             routed_connection.connection.to_entity
         );
         
-        // Draw the connection using the chosen route
-        self.draw_manhattan_connection_with_route(
-            ui, 
-            routed_connection.from_pin, 
-            routed_connection.to_pin, 
-            &routed_connection.connection.connection_type, 
-            connection_color, 
-            routed_connection.route
-        );
+        // Draw the connection using the enhanced drawing system
+        self.draw_enhanced_connection(ui, routed_connection, connection_color);
     }
     
-    /// Draw Manhattan connection with specified route
+    /// Draw Manhattan connection with specified route (backward compatibility)
+    #[allow(dead_code)]
     fn draw_manhattan_connection_with_route(&self, ui: &mut egui::Ui, from: egui::Pos2, to: egui::Pos2, _label: &str, color: egui::Color32, route: crate::resources::ManhattanRoute) {
-        let stroke = egui::Stroke::new(2.0, color);
-        let corner_radius = 10.0;
+        // Create a simple L-shaped connection for backward compatibility
+        let connection = crate::resources::RoutedConnection::new(
+            crate::components::Connection {
+                from_entity: bevy::prelude::Entity::PLACEHOLDER,
+                to_entity: bevy::prelude::Entity::PLACEHOLDER,
+                connection_type: String::new(),
+                from_pin_index: 0,
+                to_pin_index: 0,
+            },
+            route,
+            from,
+            to
+        );
         
-        // If the points are aligned (same x or same y), just draw a straight line
-        if (from.x - to.x).abs() <= 1.0 || (from.y - to.y).abs() <= 1.0 {
-            ui.painter().line_segment([from, to], stroke);
-            self.draw_arrow_head(ui, from, to, from, color); // Use from as corner for straight lines
+        self.draw_enhanced_connection(ui, &connection, color);
+    }
+    
+    /// Draw an enhanced connection with support for straight, L-shape and S-shape routing
+    fn draw_enhanced_connection(&self, ui: &mut egui::Ui, routed_connection: &crate::resources::RoutedConnection, color: egui::Color32) {
+        let stroke = egui::Stroke::new(2.0, color);
+        
+        // Handle straight line connections
+        if routed_connection.shape == crate::resources::ConnectionShape::Straight {
+            // Draw direct line from source to target
+            ui.painter().line_segment([routed_connection.from_pin, routed_connection.to_pin], stroke);
+            self.draw_perpendicular_arrow_head(ui, routed_connection, color);
             return;
         }
         
-        // Calculate Manhattan routing based on route choice
-        let corner = match route {
-            crate::resources::ManhattanRoute::HorizontalFirst => egui::Pos2::new(to.x, from.y),
-            crate::resources::ManhattanRoute::VerticalFirst => egui::Pos2::new(from.x, to.y),
-        };
+        // Get all points in the path: from_pin -> bend_points -> to_pin
+        let mut path_points = vec![routed_connection.from_pin];
+        path_points.extend(&routed_connection.bend_points);
+        path_points.push(routed_connection.to_pin);
         
-        // Calculate distances for each segment
-        let horizontal_distance = (corner.x - from.x).abs();
-        let vertical_distance = (to.y - corner.y).abs();
+        // Calculate adaptive corner radius based on connection geometry
+        let corner_radius = self.calculate_adaptive_corner_radius(routed_connection, &path_points);
         
-        // Only add rounded corners if both segments are long enough
-        if horizontal_distance > corner_radius * 2.0 && vertical_distance > corner_radius * 2.0 {
-            // Draw with rounded corner
-            self.draw_rounded_manhattan_path(ui, from, corner, to, corner_radius, stroke);
-        } else {
-            // Fall back to sharp corners if segments are too short
-            if horizontal_distance > 1.0 {
-                ui.painter().line_segment([from, corner], stroke);
-            }
-            if vertical_distance > 1.0 {
-                ui.painter().line_segment([corner, to], stroke);
-            }
+        // Draw the path with rounded corners
+        self.draw_multi_segment_path(ui, &path_points, corner_radius, stroke);
+        
+        // Draw arrow head perpendicular to the target edge
+        self.draw_perpendicular_arrow_head(ui, routed_connection, color);
+    }
+    
+    /// Calculate adaptive corner radius based on connection geometry
+    fn calculate_adaptive_corner_radius(&self, routed_connection: &crate::resources::RoutedConnection, path_points: &[egui::Pos2]) -> f32 {
+        let base_radius = 10.0;
+        
+        if path_points.len() < 3 {
+            return base_radius;
         }
         
-        // Draw arrow head at the target point
-        self.draw_arrow_head(ui, from, to, corner, color);
+        // Find the shortest segment length
+        let mut min_segment_length = f32::INFINITY;
+        for i in 0..path_points.len() - 1 {
+            let segment_length = path_points[i].distance(path_points[i + 1]);
+            min_segment_length = min_segment_length.min(segment_length);
+        }
+        
+        // Calculate total connection distance
+        let total_distance = routed_connection.from_pin.distance(routed_connection.to_pin);
+        
+        // Adaptive radius based on geometry:
+        // - Smaller radius for shorter segments to avoid overlapping curves
+        // - Smaller radius for close nodes to handle tight turns better
+        // - Minimum radius to maintain visual quality
+        let segment_factor = (min_segment_length / 40.0).min(1.0); // Scale down for short segments
+        let distance_factor = (total_distance / 100.0).clamp(0.3, 1.0); // Scale down for close nodes
+        
+        let adaptive_radius = base_radius * segment_factor * distance_factor;
+        adaptive_radius.clamp(3.0, 15.0) // Keep within reasonable bounds
+    }
+    
+    /// Draw a multi-segment path with rounded corners
+    fn draw_multi_segment_path(&self, ui: &mut egui::Ui, points: &[egui::Pos2], corner_radius: f32, stroke: egui::Stroke) {
+        if points.len() < 2 {
+            return;
+        }
+        
+        if points.len() == 2 {
+            // Simple straight line
+            ui.painter().line_segment([points[0], points[1]], stroke);
+            return;
+        }
+        
+        // Draw segments with rounded corners
+        for i in 0..points.len() - 1 {
+            let current = points[i];
+            let next = points[i + 1];
+            
+            // Skip very short segments
+            if current.distance(next) <= 1.0 {
+                continue;
+            }
+            
+            if i == 0 {
+                // First segment - no rounding at start
+                if i + 2 < points.len() {
+                    // There's a next segment, so round the end
+                    let after_next = points[i + 2];
+                    self.draw_segment_with_end_rounding(ui, current, next, after_next, corner_radius, stroke);
+                } else {
+                    // Last segment, no rounding
+                    ui.painter().line_segment([current, next], stroke);
+                }
+            } else if i == points.len() - 2 {
+                // Last segment - already handled rounding at start in previous iteration
+                let prev = points[i - 1];
+                self.draw_segment_with_start_rounding(ui, prev, current, next, corner_radius, stroke);
+            } else {
+                // Middle segment - round both ends
+                let prev = points[i - 1];
+                let after_next = points[i + 2];
+                self.draw_segment_with_both_rounding(ui, prev, current, next, after_next, corner_radius, stroke);
+            }
+        }
+    }
+    
+    /// Draw a segment with rounding at the end
+    fn draw_segment_with_end_rounding(&self, ui: &mut egui::Ui, start: egui::Pos2, end: egui::Pos2, _next: egui::Pos2, radius: f32, stroke: egui::Stroke) {
+        let segment_len = start.distance(end);
+        if segment_len <= radius * 2.0 {
+            // Segment too short for rounding
+            ui.painter().line_segment([start, end], stroke);
+            return;
+        }
+        
+        // Calculate where to start the curve
+        let direction = (end - start).normalized();
+        let curve_start = end - direction * radius;
+        
+        // Draw the straight part
+        ui.painter().line_segment([start, curve_start], stroke);
+        
+        // The curve will be drawn by the next segment
+    }
+    
+    /// Draw a segment with rounding at the start
+    fn draw_segment_with_start_rounding(&self, ui: &mut egui::Ui, prev: egui::Pos2, start: egui::Pos2, end: egui::Pos2, radius: f32, stroke: egui::Stroke) {
+        let segment_len = start.distance(end);
+        if segment_len <= radius * 2.0 {
+            // Segment too short for rounding
+            ui.painter().line_segment([start, end], stroke);
+            return;
+        }
+        
+        // Calculate where to end the curve
+        let direction = (end - start).normalized();
+        let curve_end = start + direction * radius;
+        
+        // Draw the curve from previous segment
+        let prev_direction = (start - prev).normalized();
+        let curve_start = start - prev_direction * radius;
+        self.draw_bezier_corner(ui, curve_start, curve_end, start, radius, stroke);
+        
+        // Draw the straight part
+        ui.painter().line_segment([curve_end, end], stroke);
+    }
+    
+    /// Draw a segment with rounding at both ends
+    fn draw_segment_with_both_rounding(&self, ui: &mut egui::Ui, prev: egui::Pos2, start: egui::Pos2, end: egui::Pos2, next: egui::Pos2, radius: f32, stroke: egui::Stroke) {
+        let segment_len = start.distance(end);
+        if segment_len <= radius * 4.0 {
+            // Segment too short for double rounding
+            ui.painter().line_segment([start, end], stroke);
+            return;
+        }
+        
+        // Calculate curve points
+        let start_direction = (end - start).normalized();
+        let end_direction = (next - end).normalized();
+        let prev_direction = (start - prev).normalized();
+        
+        let curve_start_begin = start - prev_direction * radius;
+        let curve_start_end = start + start_direction * radius;
+        let curve_end_begin = end - start_direction * radius;
+        let _curve_end_end = end + end_direction * radius;
+        
+        // Draw start curve
+        self.draw_bezier_corner(ui, curve_start_begin, curve_start_end, start, radius, stroke);
+        
+        // Draw straight middle part
+        ui.painter().line_segment([curve_start_end, curve_end_begin], stroke);
+        
+        // End curve will be drawn by next segment
+    }
+    
+    /// Draw arrow head perpendicular to the target edge
+    fn draw_perpendicular_arrow_head(&self, ui: &mut egui::Ui, routed_connection: &crate::resources::RoutedConnection, color: egui::Color32) {
+        let arrow_size = 8.0;
+        let target_pos = routed_connection.to_pin;
+        
+        // Calculate arrow direction based on target edge
+        // Arrow should point INTO the target edge from outside the node
+        let arrow_points = match routed_connection.to_edge {
+            crate::resources::EdgeSide::Top => {
+                // Arrow pointing down (into top edge from above)
+                vec![
+                    target_pos,
+                    egui::Pos2::new(target_pos.x - arrow_size/2.0, target_pos.y - arrow_size),
+                    egui::Pos2::new(target_pos.x + arrow_size/2.0, target_pos.y - arrow_size),
+                ]
+            }
+            crate::resources::EdgeSide::Right => {
+                // Arrow pointing left (into right edge from the right)
+                vec![
+                    target_pos,
+                    egui::Pos2::new(target_pos.x + arrow_size, target_pos.y - arrow_size/2.0),
+                    egui::Pos2::new(target_pos.x + arrow_size, target_pos.y + arrow_size/2.0),
+                ]
+            }
+            crate::resources::EdgeSide::Bottom => {
+                // Arrow pointing up (into bottom edge from below)
+                vec![
+                    target_pos,
+                    egui::Pos2::new(target_pos.x - arrow_size/2.0, target_pos.y + arrow_size),
+                    egui::Pos2::new(target_pos.x + arrow_size/2.0, target_pos.y + arrow_size),
+                ]
+            }
+            crate::resources::EdgeSide::Left => {
+                // Arrow pointing right (into left edge from the left)
+                vec![
+                    target_pos,
+                    egui::Pos2::new(target_pos.x - arrow_size, target_pos.y - arrow_size/2.0),
+                    egui::Pos2::new(target_pos.x - arrow_size, target_pos.y + arrow_size/2.0),
+                ]
+            }
+        };
+        
+        // Draw the filled triangle arrow head
+        ui.painter().add(egui::epaint::Shape::convex_polygon(
+            arrow_points,
+            color,
+            egui::Stroke::NONE,
+        ));
     }
 
     /// Collect node positions and pin data for connection rendering

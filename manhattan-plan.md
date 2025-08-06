@@ -33,21 +33,23 @@
 - Choose best assignment and remove used ports from future consideration
 - Handles diagonal connection cases that were causing suboptimal routing
 
-## Phase 3: Bend Staggering  
-**Goal**: When routes must overlap, stagger bend points
+## Phase 3: S-Shape Connections & Bend Staggering ✅
+**Goal**: Advanced routing with perpendicular entry/exit and bend staggering
 
-**Implementation**:
-- For connections sharing similar paths, offset bend points by distance to target
-- Closer targets get smaller offsets, farther targets get larger offsets
-- Creates clean "S-curve" separation between parallel routes
+**Implementation**: ✅ COMPLETED
+- ✅ **S-Shape Support**: Added `ConnectionShape` enum with `LShape` and `SShape` options
+- ✅ **Perpendicular Entry/Exit**: Connections extend perpendicular from edges before turning
+- ✅ **Smart Shape Selection**: Use S-shape for close nodes, same-edge connections, or high-parallel scenarios
+- ✅ **Bend Staggering**: Automatic 15px stagger per parallel connection to prevent overlaps
+- ✅ **Multi-Segment Routing**: Support for 2+ bend points with smooth rounded corners
 
-## Phase 4: Perpendicular Arrows
+## Phase 4: Perpendicular Arrows ✅
 **Goal**: Arrow heads point into target faces, not parallel to them
 
-**Implementation**:
-- Calculate inward normal vector for target edge
-- Orient arrow head perpendicular to target edge
-- Adjust connection endpoint to be slightly inset from edge
+**Implementation**: ✅ COMPLETED
+- ✅ **Edge-Based Arrow Direction**: Arrow heads always point perpendicular to target edge
+- ✅ **Proper Arrow Orientation**: Top/Right/Bottom/Left edge arrows point in correct directions
+- ✅ **Enhanced Drawing System**: Complete rewrite of connection rendering with multi-segment support
 
 ## Notes
 - Start simple, add complexity incrementally

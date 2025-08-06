@@ -268,17 +268,32 @@ pub enum ManhattanRoute {
     VerticalFirst,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionShape {
+    /// Straight line: direct connection between pins
+    Straight,
+    /// Simple L-shape: from -> corner -> to
+    LShape,
+    /// S-shape: from -> corner1 -> corner2 -> to (for parallel connections or complex routing)
+    SShape,
+}
+
 /// A routed connection with its chosen path
 #[derive(Debug, Clone)]
 pub struct RoutedConnection {
     pub connection: crate::components::Connection,
     pub route: ManhattanRoute,
+    pub shape: ConnectionShape,
     pub from_pin: egui::Pos2,
     pub to_pin: egui::Pos2,
-    pub corner: egui::Pos2, // The bend point
+    pub from_edge: EdgeSide, // Which edge the connection starts from
+    pub to_edge: EdgeSide,   // Which edge the connection ends at
+    pub bend_points: Vec<egui::Pos2>, // All bend points (1 for L-shape, 2+ for S-shape)
+    pub stagger_offset: f32, // Offset for bend staggering to avoid overlaps
 }
 
 impl RoutedConnection {
+    /// Create a simple L-shaped connection (backward compatibility)
     pub fn new(connection: crate::components::Connection, route: ManhattanRoute, from_pin: egui::Pos2, to_pin: egui::Pos2) -> Self {
         let corner = match route {
             ManhattanRoute::HorizontalFirst => egui::Pos2::new(to_pin.x, from_pin.y),
@@ -288,9 +303,155 @@ impl RoutedConnection {
         Self {
             connection,
             route,
+            shape: ConnectionShape::LShape,
             from_pin,
             to_pin,
-            corner,
+            from_edge: EdgeSide::Right, // Default values - should be set properly
+            to_edge: EdgeSide::Left,
+            bend_points: vec![corner],
+            stagger_offset: 0.0,
+        }
+    }
+    
+    /// Create a new routed connection with full control over shape and edges
+    pub fn new_with_edges(
+        connection: crate::components::Connection,
+        route: ManhattanRoute,
+        shape: ConnectionShape,
+        from_pin: egui::Pos2,
+        to_pin: egui::Pos2,
+        from_edge: EdgeSide,
+        to_edge: EdgeSide,
+        stagger_offset: f32,
+    ) -> Self {
+        let bend_points = Self::calculate_bend_points(
+            from_pin, to_pin, from_edge, to_edge, route, shape, stagger_offset
+        );
+        
+        Self {
+            connection,
+            route,
+            shape,
+            from_pin,
+            to_pin,
+            from_edge,
+            to_edge,
+            bend_points,
+            stagger_offset,
+        }
+    }
+    
+    /// Calculate bend points based on routing parameters
+    fn calculate_bend_points(
+        from_pin: egui::Pos2,
+        to_pin: egui::Pos2,
+        from_edge: EdgeSide,
+        to_edge: EdgeSide,
+        route: ManhattanRoute,
+        shape: ConnectionShape,
+        stagger_offset: f32,
+    ) -> Vec<egui::Pos2> {
+        match shape {
+            ConnectionShape::Straight => {
+                // No bend points - direct line from source to target
+                vec![]
+            }
+            ConnectionShape::LShape => {
+                // Simple L-shape with one bend point
+                let corner = match route {
+                    ManhattanRoute::HorizontalFirst => egui::Pos2::new(to_pin.x, from_pin.y),
+                    ManhattanRoute::VerticalFirst => egui::Pos2::new(from_pin.x, to_pin.y),
+                };
+                vec![corner]
+            }
+            ConnectionShape::SShape => {
+                // S-shape with two bend points for perpendicular entry/exit
+                Self::calculate_s_shape_points(from_pin, to_pin, from_edge, to_edge, route, stagger_offset)
+            }
+        }
+    }
+    
+    /// Calculate S-shape bend points for perpendicular connections
+    fn calculate_s_shape_points(
+        from_pin: egui::Pos2,
+        to_pin: egui::Pos2,
+        from_edge: EdgeSide,
+        to_edge: EdgeSide,
+        _route: ManhattanRoute,
+        stagger_offset: f32,
+    ) -> Vec<egui::Pos2> {
+        // Calculate the distance between source and target
+        let dx = to_pin.x - from_pin.x;
+        let dy = to_pin.y - from_pin.y;
+        
+        // Step 1: Extend perpendicular from source edge by 60% of the distance to target
+        let perpendicular_distance = match from_edge {
+            EdgeSide::Top | EdgeSide::Bottom => dy.abs() * 0.6,
+            EdgeSide::Left | EdgeSide::Right => dx.abs() * 0.6,
+        };
+        
+        // Add stagger offset for parallel connection separation
+        let total_perpendicular_distance = perpendicular_distance + stagger_offset;
+        
+        // Extend perpendicular from source
+        let from_extended = Self::extend_perpendicular(from_pin, from_edge, total_perpendicular_distance);
+        
+        // Step 2: Determine turn direction based on target position
+        // Turn toward the target to get closer
+        let (turn_direction, connecting_distance) = match from_edge {
+            EdgeSide::Top | EdgeSide::Bottom => {
+                // We extended vertically, now we need to turn horizontally toward target
+                if dx > 0.0 {
+                    // Target is to the right, turn right
+                    (1.0, dx.abs())
+                } else {
+                    // Target is to the left, turn left  
+                    (-1.0, dx.abs())
+                }
+            }
+            EdgeSide::Left | EdgeSide::Right => {
+                // We extended horizontally, now we need to turn vertically toward target
+                if dy > 0.0 {
+                    // Target is below, turn down
+                    (1.0, dy.abs())
+                } else {
+                    // Target is above, turn up
+                    (-1.0, dy.abs())
+                }
+            }
+        };
+        
+        // Step 3: Calculate the connecting segment endpoint
+        let connecting_end = match from_edge {
+            EdgeSide::Top | EdgeSide::Bottom => {
+                // Turn horizontally from vertical extension
+                egui::Pos2::new(from_extended.x + (connecting_distance * turn_direction), from_extended.y)
+            }
+            EdgeSide::Left | EdgeSide::Right => {
+                // Turn vertically from horizontal extension  
+                egui::Pos2::new(from_extended.x, from_extended.y + (connecting_distance * turn_direction))
+            }
+        };
+        
+        // Step 4: Calculate final approach to target (perpendicular to target edge)
+        let to_approach = Self::extend_perpendicular(to_pin, to_edge, 0.0);
+        
+        // Return the bend points for the S-shape path:
+        // from_pin -> from_extended -> connecting_end -> to_approach -> to_pin
+        vec![
+            from_extended,   // End of perpendicular extension from source
+            connecting_end,  // End of connecting segment (turned toward target)
+            to_approach,     // Start of final approach to target
+        ]
+    }
+    
+    /// Extend a point perpendicular to an edge by a given distance
+    fn extend_perpendicular(point: egui::Pos2, edge: EdgeSide, distance: f32) -> egui::Pos2 {
+        match edge {
+            EdgeSide::Top => egui::Pos2::new(point.x, point.y - distance),
+            EdgeSide::Right => egui::Pos2::new(point.x + distance, point.y),
+            EdgeSide::Bottom => egui::Pos2::new(point.x, point.y + distance),
+            EdgeSide::Left => egui::Pos2::new(point.x - distance, point.y),
         }
     }
     
@@ -314,36 +475,29 @@ impl RoutedConnection {
     
     /// Get the line segments that make up this route
     fn get_line_segments(&self) -> Vec<(egui::Pos2, egui::Pos2)> {
-        match self.route {
-            ManhattanRoute::HorizontalFirst => {
-                // from -> corner -> to
-                let mut segments = Vec::new();
-                if (self.from_pin.x - self.corner.x).abs() > 1.0 {
-                    segments.push((self.from_pin, self.corner));
-                }
-                if (self.corner.y - self.to_pin.y).abs() > 1.0 {
-                    segments.push((self.corner, self.to_pin));
-                }
-                if segments.is_empty() {
-                    segments.push((self.from_pin, self.to_pin));
-                }
-                segments
+        let mut segments = Vec::new();
+        
+        // Create segments from from_pin through all bend points to to_pin
+        let mut current_point = self.from_pin;
+        
+        for &bend_point in &self.bend_points {
+            if current_point.distance(bend_point) > 1.0 {
+                segments.push((current_point, bend_point));
             }
-            ManhattanRoute::VerticalFirst => {
-                // from -> corner -> to  
-                let mut segments = Vec::new();
-                if (self.from_pin.y - self.corner.y).abs() > 1.0 {
-                    segments.push((self.from_pin, self.corner));
-                }
-                if (self.corner.x - self.to_pin.x).abs() > 1.0 {
-                    segments.push((self.corner, self.to_pin));
-                }
-                if segments.is_empty() {
-                    segments.push((self.from_pin, self.to_pin));
-                }
-                segments
-            }
+            current_point = bend_point;
         }
+        
+        // Final segment to target
+        if current_point.distance(self.to_pin) > 1.0 {
+            segments.push((current_point, self.to_pin));
+        }
+        
+        // If no segments were created, add a direct connection
+        if segments.is_empty() {
+            segments.push((self.from_pin, self.to_pin));
+        }
+        
+        segments
     }
 }
 
