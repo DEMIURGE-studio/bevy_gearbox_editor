@@ -37,11 +37,6 @@ pub fn handle_parent_child_movement(
     // Move all children by the same delta as the parent
     for child_entity in children_to_move {
         if let Some(child_node) = editor_state.nodes.get_mut(&child_entity) {
-            let old_position = match child_node {
-                NodeType::Leaf(leaf_node) => leaf_node.entity_node.position,
-                NodeType::Parent(parent_node) => parent_node.entity_node.position,
-            };
-            
             match child_node {
                 NodeType::Leaf(leaf_node) => {
                     leaf_node.entity_node.position += event.drag_delta;

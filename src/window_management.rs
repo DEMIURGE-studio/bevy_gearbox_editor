@@ -8,9 +8,10 @@
 use bevy::prelude::*;
 use bevy::render::camera::RenderTarget;
 use bevy::window::{PrimaryWindow, WindowRef, WindowResolution};
-// Removed unused imports
+use bevy_egui::EguiMultipassSchedule;
 
 use crate::editor_state::EditorWindow;
+use crate::EditorWindowContextPass;
 
 /// System to handle hotkeys for opening editor windows
 /// 
@@ -41,12 +42,16 @@ fn spawn_editor_window(commands: &mut Commands) {
         EditorWindow,
     )).id();
     
-    // Spawn a camera for this window
+    // Spawn a camera for this window with the editor multipass schedule
     commands.spawn((
         Camera3d::default(),
         Camera {
             target: RenderTarget::Window(WindowRef::Entity(window_entity)),
             ..default()
         },
+        EguiMultipassSchedule::new(EditorWindowContextPass),
+        EditorWindow, // Mark this camera as belonging to the editor
     ));
+    
+    info!("🪟 Spawned new editor window");
 }

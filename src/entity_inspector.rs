@@ -9,10 +9,11 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::{
     bevy_inspector::ui_for_entity,
-    bevy_egui::{EguiContext, PrimaryEguiContext},
+    bevy_egui::EguiContext,
 };
 
-use crate::editor_state::{EditorState, get_entity_name_from_world};
+
+use crate::editor_state::{EditorState, EditorWindow, get_entity_name_from_world};
 
 /// System to render the entity inspector UI
 /// 
@@ -30,9 +31,9 @@ pub fn entity_inspector_system(world: &mut World) {
         // Get the entity name
         let entity_name = get_entity_name_from_world(inspected_entity, world);
         
-        // Get the egui context using the same approach as bevy-inspector-egui examples
+        // Get the egui context from editor windows only
         let Ok(egui_context) = world
-            .query_filtered::<&mut EguiContext, With<PrimaryEguiContext>>()
+            .query_filtered::<&mut EguiContext, (With<EditorWindow>, Without<bevy_egui::PrimaryEguiContext>)>()
             .single(world)
         else {
             return;
