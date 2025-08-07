@@ -1,55 +1,96 @@
+//! Bevy Gearbox Editor
+//! 
+//! A visual editor for Bevy state machines with multi-window support,
+//! hierarchical node editing, and real-time entity inspection.
+
 use bevy::prelude::*;
-use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
+use bevy_gearbox::StateMachineRoot;
 
-// Re-export modules for public API
+// Module declarations
+mod editor_state;
+mod hierarchy;
+mod node_editor;
+mod context_menu;
+mod window_management;
+mod entity_inspector;
+mod machine_list;
 pub mod components;
-pub mod resources;
-pub mod systems;
-pub mod ui;
-pub mod utils;
 
-// Re-export commonly used types
-pub use components::*;
-pub use resources::*;
-pub use systems::*;
+// Re-exports
+pub use editor_state::*;
 
-use crate::ui::render_graph_nodes_system;
-
+/// Main plugin for the Bevy Gearbox Editor
 pub struct GearboxEditorPlugin;
 
 impl Plugin for GearboxEditorPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(EguiPlugin::default())
-           .add_plugins(DefaultInspectorConfigPlugin)
-           // Initialize resources
-           .init_resource::<GraphState>()
-           .init_resource::<NodeSizeCache>()
-           .init_resource::<PinPositionCache>()
-           .init_resource::<ComponentDialogState>()
-           .init_resource::<TransitionCreationState>()
-           .init_resource::<SelectedEntity>()
-           // Register custom components for reflection (so bevy-inspector-egui can show them)
-           .register_type::<GraphCanvas>()
-           .register_type::<GraphNode>() 
-           .register_type::<EntityNode>()
-           .register_type::<GraphState>()
-           // Register connection system types
-           .register_type::<NodePins>()
-           .register_type::<NodePin>()
-           .register_type::<PinType>()
-           .register_type::<Connection>()
-                       // Register parent-child zone system types
-            .register_type::<ParentZone>()
-            .register_type::<InitialStatePointer>()
-            // Initialize drag-drop state resource
-            .init_resource::<DragDropState>()
-            // Initialize connection animations resource
-            .init_resource::<ConnectionAnimations>()
-                       // Add systems
-            .add_systems(Startup, setup_graph_canvas)  
-            .add_systems(Update, (auto_discover_connections, manage_parent_zones, enforce_root_hierarchy, update_connection_animations))
-            .add_observer(transition_animation_listener)
-           .add_systems(EguiPrimaryContextPass, render_graph_nodes_system);
+        // Add required plugins
+        app.add_plugins((
+            EguiPlugin::default(),
+            DefaultInspectorConfigPlugin,
+        ));
+
+        // Initialize resources
+        app.init_resource::<EditorState>();
+
+        // Register events
+        app.add_event::<NodeContextMenuRequested>()
+            .add_event::<NodeActionTriggered>()
+            .add_event::<NodeDragged>();
+
+        // Add systems
+        app.add_systems(Update, window_management::handle_editor_hotkeys)
+            .add_systems(EguiPrimaryContextPass, editor_ui_system)
+            .add_systems(EguiPrimaryContextPass, entity_inspector::entity_inspector_system)
+            .add_systems(Update, (
+                machine_list::ensure_node_actions,
+                hierarchy::ensure_initial_states,
+                node_editor::update_node_types,
+                hierarchy::constrain_children_to_parents,
+                hierarchy::recalculate_parent_sizes,
+            ).chain());
+
+        // Add observers
+        app.add_observer(context_menu::handle_context_menu_request)
+            .add_observer(context_menu::handle_node_action)
+            .add_observer(hierarchy::handle_parent_child_movement);
     }
+}
+
+/// System to render the main editor UI
+fn editor_ui_system(
+    mut contexts: EguiContexts,
+    mut editor_state: ResMut<EditorState>,
+    state_machines: Query<(Entity, Option<&Name>), With<StateMachineRoot>>,
+    all_entities: Query<(Entity, Option<&Name>)>,
+    child_of_query: Query<&ChildOf>,
+    children_query: Query<&Children>,
+    mut commands: Commands,
+) {
+    // Get the context for the editor window
+    let ctx = contexts.ctx_mut().unwrap();
+    if editor_state.selected_machine.is_some() {
+        // Show the node editor for the selected machine
+        node_editor::show_machine_editor(
+            ctx,
+            &mut editor_state,
+            &all_entities,
+            &child_of_query,
+            &children_query,
+            &mut commands,
+        );
+    } else {
+        // Show the machine list
+        machine_list::show_machine_list(
+            ctx,
+            &mut editor_state,
+            &state_machines,
+            &mut commands,
+        );
+    }
+
+    // Render context menu if requested
+    context_menu::render_context_menu(ctx, &mut editor_state, &mut commands);
 }

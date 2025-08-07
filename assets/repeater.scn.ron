@@ -11,12 +11,6 @@
             guards: None,
           ),
         ),
-        "bevy_gearbox_editor::components::EntityNode": (),
-        "bevy_gearbox_editor::components::GraphNode": (
-          position: (100.0, 100.0),
-          size: (200.0, 100.0),
-          expanded: false,
-        ),
       },
     ),
     4294967297: (
@@ -48,12 +42,6 @@
           ),
           remaining: 5,
         ),
-        "bevy_gearbox_editor::components::EntityNode": (),
-        "bevy_gearbox_editor::components::GraphNode": (
-          position: (350.0, 100.0),
-          size: (200.0, 100.0),
-          expanded: false,
-        ),
       },
     ),
     4294967298: (
@@ -67,12 +55,6 @@
         "bevy_gearbox::InitialState": (4294967296),
         "repeater::AbilityMachine": (),
         "bevy_gearbox::StateMachineRoot": (),
-        "bevy_gearbox_editor::components::EntityNode": (),
-        "bevy_gearbox_editor::components::GraphNode": (
-          position: (600.0, 100.0),
-          size: (200.0, 100.0),
-          expanded: false,
-        ),
       },
     ),
   },
