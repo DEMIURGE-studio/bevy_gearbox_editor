@@ -182,6 +182,42 @@ pub struct EditorState {
     pub context_menu_position: Option<Pos2>,
     /// Entity currently being inspected
     pub inspected_entity: Option<Entity>,
+    /// Component addition UI state
+    pub component_addition: ComponentAdditionState,
+}
+
+/// State for the component addition UI
+#[derive(Debug, Default)]
+pub struct ComponentAdditionState {
+    /// Search text for filtering components
+    pub search_text: String,
+    /// Whether the dropdown is open
+    pub dropdown_open: bool,
+    /// Hierarchical component organization (cached)
+    pub component_hierarchy: Option<crate::entity_inspector::ComponentHierarchy>,
+    /// Expanded state for each namespace
+    pub expanded_namespaces: std::collections::HashSet<String>,
+}
+
+impl ComponentAdditionState {
+    /// Update the component hierarchy
+    pub fn update_hierarchy(&mut self, hierarchy: crate::entity_inspector::ComponentHierarchy) {
+        self.component_hierarchy = Some(hierarchy);
+    }
+
+    /// Toggle expansion state for a namespace path
+    pub fn toggle_namespace(&mut self, namespace_path: &str) {
+        if self.expanded_namespaces.contains(namespace_path) {
+            self.expanded_namespaces.remove(namespace_path);
+        } else {
+            self.expanded_namespaces.insert(namespace_path.to_string());
+        }
+    }
+
+    /// Check if a namespace is expanded
+    pub fn is_namespace_expanded(&self, namespace_path: &str) -> bool {
+        self.expanded_namespaces.contains(namespace_path)
+    }
 }
 
 impl EditorState {
