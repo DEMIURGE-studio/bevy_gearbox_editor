@@ -213,6 +213,7 @@ pub enum NodeAction {
     Inspect,
     AddChild,
     Rename,
+    SetAsInitialState,
 }
 
 /// Event fired when a node action is triggered

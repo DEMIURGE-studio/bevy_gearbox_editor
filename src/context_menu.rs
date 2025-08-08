@@ -6,7 +6,7 @@
 //! - Entity creation and hierarchy management
 
 use bevy::prelude::*;
-use bevy_gearbox::StateMachineRoot;
+use bevy_gearbox::{StateMachineRoot, InitialState};
 use bevy_egui::egui;
 
 use crate::editor_state::{EditorState, StateMachineEditorData, NodeAction, NodeActionTriggered, NodeContextMenuRequested};
@@ -77,6 +77,22 @@ pub fn handle_node_action(
             let entity_name = name_query.get(event.entity).unwrap().to_string();
             machine_data.text_editing.start_editing(event.entity, &entity_name);
         }
+        NodeAction::SetAsInitialState => {
+            // Set this entity as the initial state for its parent
+            // This requires finding the parent and updating its InitialState component
+            let target_entity = event.entity; // Capture the entity to avoid lifetime issues
+            commands.queue(move |world: &mut World| {
+                // Find the parent of this entity by getting its ChildOf component
+                if let Some(child_of) = world.entity(target_entity).get::<ChildOf>() {
+                    let parent_entity = child_of.0;
+                    // Set or update the InitialState component on the parent
+                    world.entity_mut(parent_entity).insert(InitialState(target_entity));
+                    info!("✅ Set entity {:?} as initial state for parent {:?}", target_entity, parent_entity);
+                } else {
+                    warn!("⚠️ Could not find parent for entity {:?} to set as initial state", target_entity);
+                }
+            });
+        }
     }
 }
 
@@ -123,6 +139,16 @@ pub fn render_context_menu(
                             commands.trigger(NodeActionTriggered {
                                 entity,
                                 action: NodeAction::Rename,
+                            });
+                            editor_state.context_menu_entity = None;
+                            editor_state.context_menu_position = None;
+                            ui.close_menu();
+                        }
+                        
+                        if ui.button("Set as Initial State").clicked() {
+                            commands.trigger(NodeActionTriggered {
+                                entity,
+                                action: NodeAction::SetAsInitialState,
                             });
                             editor_state.context_menu_entity = None;
                             editor_state.context_menu_position = None;
