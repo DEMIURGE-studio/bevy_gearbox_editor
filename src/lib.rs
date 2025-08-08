@@ -43,13 +43,6 @@ impl Plugin for GearboxEditorPlugin {
         // Initialize resources
         app.init_resource::<EditorState>();
 
-        // Register events
-        app.add_event::<NodeContextMenuRequested>()
-            .add_event::<NodeActionTriggered>()
-            .add_event::<NodeDragged>()
-            .add_event::<TransitionCreationRequested>()
-            .add_event::<CreateTransition>();
-
         // Add systems
         app.add_systems(Update, window_management::handle_editor_hotkeys)
             .add_systems(EditorWindowContextPass, editor_ui_system)
@@ -76,7 +69,7 @@ impl Plugin for GearboxEditorPlugin {
 fn editor_ui_system(
     mut editor_context: Query<&mut EguiContext, (With<EditorWindow>, Without<bevy_egui::PrimaryEguiContext>)>,
     mut editor_state: ResMut<EditorState>,
-    mut state_machines: Query<(Entity, Option<&Name>, Option<&mut StateMachineEditorData>), With<StateMachineRoot>>,
+    mut state_machines: Query<(Entity, Option<&Name>, Option<&mut StateMachinePersistentData>, Option<&mut StateMachineTransientData>), With<StateMachineRoot>>,
     machine_list_query: Query<(Entity, Option<&Name>), With<StateMachineRoot>>,
     all_entities: Query<(Entity, Option<&Name>, Option<&InitialState>)>,
     child_of_query: Query<&ChildOf>,
@@ -89,19 +82,42 @@ fn editor_ui_system(
         
         if let Some(selected_machine) = editor_state.selected_machine {
             // Get the editor data for the selected machine
-            if let Ok((_, _, editor_data_opt)) = state_machines.get_mut(selected_machine) {
-                // Ensure the machine has editor data
-                let mut editor_data = if let Some(data) = editor_data_opt {
+            if let Ok((_, _, persistent_data_opt, transient_data_opt)) = state_machines.get_mut(selected_machine) {
+                // Ensure the machine has both components
+                let mut persistent_data = if let Some(data) = persistent_data_opt {
                     data
                 } else {
                     // Add the component if it doesn't exist
-                    commands.entity(selected_machine).insert(StateMachineEditorData::default());
+                    commands.entity(selected_machine).insert(StateMachinePersistentData::default());
                     // For this frame, create a temporary default
-                    let mut temp_data = StateMachineEditorData::default();
+                    let mut temp_persistent = StateMachinePersistentData::default();
+                    let mut temp_transient = StateMachineTransientData::default();
                     node_editor::show_machine_editor(
                         ctx,
                         &mut editor_state,
-                        &mut temp_data,
+                        &mut temp_persistent,
+                        &mut temp_transient,
+                        &all_entities,
+                        &child_of_query,
+                        &children_query,
+                        &mut commands,
+                    );
+                    return;
+                };
+                
+                let mut transient_data = if let Some(data) = transient_data_opt {
+                    data
+                } else {
+                    // Add the component if it doesn't exist
+                    commands.entity(selected_machine).insert(StateMachineTransientData::default());
+                    // For this frame, create a temporary default
+                    let mut temp_persistent = StateMachinePersistentData::default();
+                    let mut temp_transient = StateMachineTransientData::default();
+                    node_editor::show_machine_editor(
+                        ctx,
+                        &mut editor_state,
+                        &mut temp_persistent,
+                        &mut temp_transient,
                         &all_entities,
                         &child_of_query,
                         &children_query,
@@ -114,7 +130,8 @@ fn editor_ui_system(
                 node_editor::show_machine_editor(
                     ctx,
                     &mut editor_state,
-                    &mut editor_data,
+                    &mut persistent_data,
+                    &mut transient_data,
                     &all_entities,
                     &child_of_query,
                     &children_query,
@@ -140,7 +157,7 @@ fn editor_ui_system(
 fn handle_transition_creation_request(
     trigger: Trigger<TransitionCreationRequested>,
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachineRoot>>,
     type_registry: Res<AppTypeRegistry>,
 ) {
     let event = trigger.event();
@@ -150,22 +167,22 @@ fn handle_transition_creation_request(
         return;
     };
     
-    let Ok(mut machine_data) = state_machines.get_mut(selected_machine) else {
+    let Ok(mut transient_data) = state_machines.get_mut(selected_machine) else {
         return;
     };
     
     // Start the transition creation process
-    machine_data.transition_creation.start_transition(event.source_entity);
+    transient_data.transition_creation.start_transition(event.source_entity);
     
     // Discover available event types for TransitionListener
-    discover_transition_listener_event_types(&mut machine_data.transition_creation, &type_registry);
+    discover_transition_listener_event_types(&mut transient_data.transition_creation, &type_registry);
 }
 
 /// Observer to handle transition creation with selected event type
 fn handle_create_transition(
     trigger: Trigger<CreateTransition>,
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
+    mut state_machines: Query<(&mut StateMachineTransientData, &mut StateMachinePersistentData), With<StateMachineRoot>>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
@@ -175,7 +192,7 @@ fn handle_create_transition(
         return;
     };
     
-    let Ok(mut machine_data) = state_machines.get_mut(selected_machine) else {
+    let Ok((mut transient_data, mut persistent_data)) = state_machines.get_mut(selected_machine) else {
         return;
     };
     
@@ -199,12 +216,12 @@ fn handle_create_transition(
     });
     
     // Complete the transition creation process
-    machine_data.transition_creation.complete();
+    transient_data.transition_creation.complete();
     
     // Add the visual transition to the list for immediate display
     if let (Some(source_rect), Some(target_rect)) = (
-        machine_data.nodes.get(&event.source_entity).map(|n| n.current_rect()),
-        machine_data.nodes.get(&event.target_entity).map(|n| n.current_rect())
+        persistent_data.nodes.get(&event.source_entity).map(|n| n.current_rect()),
+        persistent_data.nodes.get(&event.target_entity).map(|n| n.current_rect())
     ) {
         // Position event node at midpoint between source and target initially
         let initial_event_position = egui::Pos2::new(
@@ -212,7 +229,7 @@ fn handle_create_transition(
             (source_rect.center().y + target_rect.center().y) / 2.0,
         );
         
-        machine_data.visual_transitions.push(TransitionConnection {
+        persistent_data.visual_transitions.push(TransitionConnection {
             source_entity: event.source_entity,
             target_entity: event.target_entity,
             event_type: event.event_type.clone(),

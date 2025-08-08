@@ -9,8 +9,9 @@ use bevy::prelude::*;
 use bevy_gearbox::{StateMachineRoot, InitialState};
 use bevy_egui::egui;
 
-use crate::editor_state::{EditorState, StateMachineEditorData, NodeAction, NodeActionTriggered, NodeContextMenuRequested};
+use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested};
 use crate::components::{NodeType, LeafNode};
+use crate::{StateMachinePersistentData, StateMachineTransientData};
 
 /// Observer to handle context menu requests
 /// 
@@ -34,7 +35,7 @@ pub fn handle_node_action(
     trigger: Trigger<NodeActionTriggered>,
     mut commands: Commands,
     mut editor_state: ResMut<EditorState>,
-    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
+    mut state_machines: Query<(&mut StateMachinePersistentData, &mut StateMachineTransientData), With<StateMachineRoot>>,
     name_query: Query<&Name>,
 ) {
     let event = trigger.event();
@@ -44,7 +45,7 @@ pub fn handle_node_action(
         return;
     };
     
-    let Ok(mut machine_data) = state_machines.get_mut(selected_machine) else {
+    let Ok((mut persistent_data, mut transient_data)) = state_machines.get_mut(selected_machine) else {
         return;
     };
     
@@ -61,7 +62,7 @@ pub fn handle_node_action(
             )).id();
         
             // Add the child as a leaf node in the editor at an offset position
-            if let Some(parent_node) = machine_data.nodes.get(&event.entity) {
+            if let Some(parent_node) = persistent_data.nodes.get(&event.entity) {
                 let parent_pos = match parent_node {
                     NodeType::Leaf(leaf_node) => leaf_node.entity_node.position,
                     NodeType::Parent(parent_node) => parent_node.entity_node.position,
@@ -70,12 +71,12 @@ pub fn handle_node_action(
                 // Position the child at an offset from the parent
                 let child_pos = parent_pos + egui::Vec2::new(50.0, 50.0);
                 let leaf_node = LeafNode::new(child_pos);
-                machine_data.nodes.insert(child_entity, NodeType::Leaf(leaf_node));
+                persistent_data.nodes.insert(child_entity, NodeType::Leaf(leaf_node));
             }
         }
         NodeAction::Rename => {
             let entity_name = name_query.get(event.entity).unwrap().to_string();
-            machine_data.text_editing.start_editing(event.entity, &entity_name);
+            transient_data.text_editing.start_editing(event.entity, &entity_name);
         }
         NodeAction::SetAsInitialState => {
             // Set this entity as the initial state for its parent

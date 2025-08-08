@@ -154,18 +154,24 @@ impl TransitionCreationState {
     }
 }
 
-/// Component that holds state machine-specific editor data
-/// This lives on the root state machine entity and can be persisted
+/// Component that holds persistent state machine editor data
+/// This lives on the root state machine entity and should be saved/loaded
 #[derive(Component, Default)]
-pub struct StateMachineEditorData {
-    /// Map of entity to its UI node representation
+pub struct StateMachinePersistentData {
+    /// Map of entity to its UI node representation (positions, sizes, etc.)
     pub nodes: HashMap<Entity, NodeType>,
+    /// Visual transitions with custom layouts (draggable event nodes)
+    pub visual_transitions: Vec<TransitionConnection>,
+}
+
+/// Component that holds transient state machine editor data
+/// This is temporary UI state that should not be persisted
+#[derive(Component, Default)]
+pub struct StateMachineTransientData {
     /// Currently selected node for z-ordering
     pub selected_node: Option<Entity>,
     /// Transition creation state
     pub transition_creation: TransitionCreationState,
-    /// Visual transitions to render
-    pub visual_transitions: Vec<TransitionConnection>,
     /// Text editing state for renaming nodes
     pub text_editing: TextEditingState,
 }

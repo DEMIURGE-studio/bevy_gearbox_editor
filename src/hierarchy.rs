@@ -10,8 +10,9 @@ use bevy::prelude::*;
 use bevy_gearbox::{InitialState, StateMachineRoot};
 use std::collections::HashSet;
 
-use crate::editor_state::{EditorState, StateMachineEditorData, NodeDragged};
+use crate::editor_state::{EditorState, NodeDragged};
 use crate::components::NodeType;
+use crate::StateMachinePersistentData;
 
 /// Observer to handle parent-child movement when nodes are dragged
 /// 
@@ -20,7 +21,7 @@ use crate::components::NodeType;
 pub fn handle_parent_child_movement(
     trigger: Trigger<NodeDragged>,
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
     child_of_query: Query<(Entity, &ChildOf)>,
     mut commands: Commands,
 ) {
@@ -88,7 +89,7 @@ pub fn ensure_initial_states(
 /// but can move right and down freely (which will trigger parent expansion).
 pub fn constrain_children_to_parents(
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
     child_of_query: Query<(Entity, &ChildOf)>,
 ) {
     let Some(selected_machine) = editor_state.selected_machine else {
@@ -115,7 +116,7 @@ pub fn constrain_children_to_parents(
 /// Only constrains left and top edges - children can move right and down freely.
 fn constrain_child_to_parent(
     child_entity: Entity,
-    machine_data: &mut StateMachineEditorData,
+    machine_data: &mut StateMachinePersistentData,
     child_of_query: &Query<(Entity, &ChildOf)>,
 ) {
     if let Ok((_, child_of)) = child_of_query.get(child_entity) {
@@ -158,7 +159,7 @@ fn constrain_child_to_parent(
 /// This uses a bottom-up approach, processing leaf nodes first, then their parents.
 pub fn recalculate_parent_sizes(
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
     children_query: Query<&Children>,
 ) {
     let Some(selected_machine) = editor_state.selected_machine else {
