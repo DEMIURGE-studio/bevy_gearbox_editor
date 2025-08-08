@@ -11,7 +11,7 @@ use bevy_gearbox::{InitialState, StateMachineRoot};
 use bevy_egui::egui;
 use std::collections::HashSet;
 
-use crate::editor_state::{EditorState, StateMachinePersistentData, StateMachineTransientData, NodeDragged, NodeContextMenuRequested, RenderItem, get_entity_name, should_get_selection_boost, TransitionCreationRequested, CreateTransition, draw_arrow, draw_interactive_pill_label, closest_point_on_rect_edge};
+use crate::editor_state::{EditorState, StateMachinePersistentData, StateMachineTransientData, NodeDragged, NodeContextMenuRequested, RenderItem, get_entity_name, should_get_selection_boost, TransitionCreationRequested, CreateTransition, SaveStateMachine, draw_arrow, draw_interactive_pill_label, closest_point_on_rect_edge};
 use crate::components::{NodeType, LeafNode, ParentNode};
 
 /// System to update node types based on entity hierarchy
@@ -92,7 +92,7 @@ pub fn show_machine_editor(
     commands: &mut Commands,
 ) {
     egui::CentralPanel::default().show(ctx, |ui| {
-        // Add back button at the top
+        // Add back button and save button at the top
         ui.horizontal(|ui| {
             if ui.button("← Back to Machine List").clicked() {
                 editor_state.selected_machine = None;
@@ -103,6 +103,12 @@ pub fn show_machine_editor(
                 let machine_name = get_entity_name(selected_root, all_entities);
                 ui.separator();
                 ui.label(format!("Editing: {}", machine_name));
+                
+                ui.separator();
+                if ui.button("💾 Save").clicked() {
+                    // Trigger save event
+                    commands.trigger(SaveStateMachine { entity: selected_root });
+                }
             }
         });
         

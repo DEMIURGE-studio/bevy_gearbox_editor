@@ -286,6 +286,12 @@ pub struct CreateTransition {
     pub event_type: String,
 }
 
+/// Event fired when a state machine should be saved
+#[derive(Event)]
+pub struct SaveStateMachine {
+    pub entity: Entity,
+}
+
 /// Item to be rendered in the node editor, with z-order information
 pub struct RenderItem {
     pub entity: Entity,

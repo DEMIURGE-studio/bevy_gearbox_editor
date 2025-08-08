@@ -1,5 +1,3 @@
-#![feature(let_chains)]
-
 use bevy::prelude::*;
 use bevy::reflect::Reflect;
 use bevy_gearbox::prelude::*;
@@ -69,7 +67,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         Name::new("StateMachineRoot (from scene)"),
         // This component will eventually be replaced by the SceneSpawner
         // logic that loads our asset.
-        DynamicSceneRoot(asset_server.load("repeater.scn.ron")),
+        DynamicSceneRoot(asset_server.load("repeatertest.scn.ron")),
     ));
 }
 

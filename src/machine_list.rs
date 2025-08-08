@@ -9,22 +9,7 @@ use bevy::prelude::*;
 use bevy_gearbox::StateMachineRoot;
 use bevy_egui::egui;
 
-use crate::editor_state::{EditorState, StateMachinePersistentData};
-use crate::components::{NodeType, ParentNode};
-
-/// System to ensure all state machine entities have StateMachinePersistentData components
-pub fn ensure_node_actions(
-    mut commands: Commands,
-    state_machines: Query<Entity, (With<StateMachineRoot>, Without<StateMachinePersistentData>)>,
-) {
-    for entity in state_machines.iter() {
-        // Add the StateMachinePersistentData component with a root node
-        let mut editor_data = StateMachinePersistentData::default();
-        let parent_node = ParentNode::new(egui::Pos2::new(200.0, 100.0));
-        editor_data.nodes.insert(entity, NodeType::Parent(parent_node));
-        commands.entity(entity).insert(editor_data);
-    }
-}
+use crate::editor_state::EditorState;
 
 /// Render the state machine list interface
 pub fn show_machine_list(

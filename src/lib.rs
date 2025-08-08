@@ -44,12 +44,17 @@ impl Plugin for GearboxEditorPlugin {
         // Initialize resources
         app.init_resource::<EditorState>();
 
+        // Register reflectable types for scene serialization
+        app.register_type::<reflectable::ReflectableStateMachinePersistentData>()
+            .register_type::<reflectable::ReflectableNode>()
+            .register_type::<reflectable::ReflectableNodeType>()
+            .register_type::<reflectable::ReflectableTransitionConnection>();
+
         // Add systems
         app.add_systems(Update, window_management::handle_editor_hotkeys)
             .add_systems(EditorWindowContextPass, editor_ui_system)
             .add_systems(EditorWindowContextPass, entity_inspector::entity_inspector_system)
             .add_systems(Update, (
-                machine_list::ensure_node_actions,
                 hierarchy::ensure_initial_states,
                 node_editor::update_node_types,
                 hierarchy::constrain_children_to_parents,
@@ -61,7 +66,9 @@ impl Plugin for GearboxEditorPlugin {
             .add_observer(context_menu::handle_node_action)
             .add_observer(hierarchy::handle_parent_child_movement)
             .add_observer(handle_transition_creation_request)
-            .add_observer(handle_create_transition);
+            .add_observer(handle_create_transition)
+            .add_observer(handle_save_state_machine)
+            .add_observer(reflectable::on_add_reflectable_state_machine);
     }
 }
 
@@ -356,5 +363,40 @@ fn create_transition_listener_component(
     }
     
     Ok(())
+}
+
+/// Observer to handle save state machine requests
+fn handle_save_state_machine(
+    trigger: Trigger<SaveStateMachine>,
+    mut commands: Commands,
+) {
+    let event = trigger.event();
+    
+    // Queue the save operation as a command to access the world
+    let entity = event.entity;
+    commands.queue(move |world: &mut World| {
+        // Generate a filename based on the entity name
+        let entity_name = if let Some(name) = world.get::<Name>(entity) {
+            name.as_str().to_string()
+        } else {
+            format!("state_machine_{:?}", entity)
+        };
+        
+        let filename = format!("assets/{}.scn.ron", entity_name.replace(" ", "_").to_lowercase());
+        
+        // Save the state machine
+        match crate::reflectable::ReflectableStateMachinePersistentData::save_state_machine_to_file(
+            world, 
+            entity, 
+            &filename
+        ) {
+            Ok(_) => {
+                info!("✅ State machine '{}' saved to {}", entity_name, filename);
+            }
+            Err(e) => {
+                error!("❌ Failed to save state machine '{}': {}", entity_name, e);
+            }
+        }
+    });
 }
 
