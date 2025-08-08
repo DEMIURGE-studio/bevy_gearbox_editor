@@ -81,5 +81,6 @@ pub struct NodeResponse {
     pub drag_delta: egui::Vec2,
     pub hovered: bool,
     pub right_clicked: bool,
+    pub add_transition_clicked: bool,
 }
 

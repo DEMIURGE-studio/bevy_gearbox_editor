@@ -22,6 +22,12 @@ impl LeafNode {
         ui: &mut egui::Ui,
         text: &str,
         entity_id: Option<&str>,
+        is_selected: bool,
+        is_root: bool,
+        is_editing: bool,
+        editing_text: &mut String,
+        should_focus: bool,
+        first_focus: bool,
     ) -> NodeResponse {
         // Calculate text dimensions
         let main_font_id = self.entity_node.main_font_id();
@@ -87,14 +93,87 @@ impl LeafNode {
         
         node_response.hovered = response.hovered();
         
-        // Draw the leaf node
-        self.draw_node(ui, rect, &main_text_galley, subscript_galley.as_ref().map(|v| &**v), text_gap);
+        // Draw the leaf node (with editing support)
+        self.draw_node_with_editing(
+            ui, 
+            rect, 
+            &main_text_galley, 
+            subscript_galley.as_ref().map(|v| &**v), 
+            text_gap,
+            is_editing,
+            editing_text,
+            should_focus,
+            first_focus
+        );
+        
+        // Add the + button for transitions (only if selected and not root)
+        if is_selected && !is_root {
+            let button_size = 16.0;
+            let button_pos = egui::Pos2::new(
+                rect.max.x - button_size - 4.0,
+                rect.min.y + 4.0,
+            );
+            let button_rect = egui::Rect::from_min_size(button_pos, egui::Vec2::splat(button_size));
+            
+            let button_response = ui.allocate_rect(button_rect, egui::Sense::click());
+            if button_response.clicked() {
+                node_response.add_transition_clicked = true;
+            }
+            
+            // Draw the + button
+            let painter = ui.painter();
+            let button_color = if button_response.hovered() {
+                egui::Color32::from_rgb(100, 150, 255)
+            } else {
+                egui::Color32::from_rgb(80, 120, 200)
+            };
+            
+            painter.circle_filled(button_rect.center(), button_size / 2.0, button_color);
+            
+            // Draw the + symbol
+            let line_width = 1.5;
+            let cross_size = 6.0;
+            painter.line_segment(
+                [
+                    button_rect.center() - egui::Vec2::new(cross_size / 2.0, 0.0),
+                    button_rect.center() + egui::Vec2::new(cross_size / 2.0, 0.0),
+                ],
+                egui::Stroke::new(line_width, egui::Color32::WHITE),
+            );
+            painter.line_segment(
+                [
+                    button_rect.center() - egui::Vec2::new(0.0, cross_size / 2.0),
+                    button_rect.center() + egui::Vec2::new(0.0, cross_size / 2.0),
+                ],
+                egui::Stroke::new(line_width, egui::Color32::WHITE),
+            );
+        }
         
         node_response
     }
     
+    /// Draw the leaf node with editing support
+    fn draw_node_with_editing(
+        &self,
+        ui: &mut egui::Ui,
+        rect: Rect,
+        main_text_galley: &egui::Galley,
+        subscript_galley: Option<&egui::Galley>,
+        text_gap: f32,
+        is_editing: bool,
+        editing_text: &mut String,
+        should_focus: bool,
+        first_focus: bool,
+    ) {
+        if is_editing {
+            self.draw_node_editing(ui, rect, subscript_galley, text_gap, editing_text, should_focus, first_focus);
+        } else {
+            self.draw_node_normal(ui, rect, main_text_galley, subscript_galley, text_gap);
+        }
+    }
+
     /// Draw the leaf node with rounded rectangle background and text
-    fn draw_node(
+    fn draw_node_normal(
         &self,
         ui: &mut egui::Ui,
         rect: Rect,
@@ -140,6 +219,95 @@ impl LeafNode {
             let subscript_pos = Pos2::new(
                 rect.center().x - subscript_size.x * 0.5,
                 text_block_start_y + main_text_size.y + text_gap,
+            );
+            painter.galley(subscript_pos, subscript_galley.clone().into(), egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180));
+        }
+    }
+    
+    /// Draw the leaf node in editing mode with text input
+    fn draw_node_editing(
+        &self,
+        ui: &mut egui::Ui,
+        rect: Rect,
+        subscript_galley: Option<&egui::Galley>,
+        text_gap: f32,
+        editing_text: &mut String,
+        should_focus: bool,
+        first_focus: bool,
+    ) {
+        // Calculate text input area (main text area only)
+        let subscript_size = subscript_galley.map(|g| g.size()).unwrap_or(egui::Vec2::ZERO);
+        let total_subscript_height = if subscript_galley.is_some() { subscript_size.y + text_gap } else { 0.0 };
+        
+        let text_input_height = rect.height() - self.entity_node.padding.y * 2.0 - total_subscript_height;
+        let text_input_rect = egui::Rect::from_min_size(
+            rect.min + self.entity_node.padding,
+            egui::Vec2::new(rect.width() - self.entity_node.padding.x * 2.0, text_input_height),
+        );
+        
+        // First scope: Draw background and border using painter
+        {
+            let painter = ui.painter();
+            
+            // Draw background with editing highlight
+            painter.rect_filled(
+                rect,
+                egui::CornerRadius::same(10),
+                egui::Color32::from_rgb(70, 70, 90), // Slightly brighter for editing
+            );
+            
+            // Draw border with editing color
+            painter.rect_stroke(
+                rect,
+                egui::CornerRadius::same(10),
+                egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 150, 255)), // Blue border for editing
+                egui::StrokeKind::Outside,
+            );
+        }
+        
+        // Second scope: Handle text input (mutable borrow of ui)
+        {
+            // Create text input with a unique ID
+            let text_edit_id = egui::Id::new(format!("text_edit_{:?}", self.entity_node.position));
+            let text_edit = egui::TextEdit::singleline(editing_text)
+                .id(text_edit_id)
+                .font(self.entity_node.main_font_id())
+                .text_color(egui::Color32::WHITE)
+                .desired_width(text_input_rect.width())
+                .margin(egui::Vec2::ZERO);
+            
+            // Position and show the text input using a child UI
+            let mut child_ui = ui.new_child(egui::UiBuilder::new()
+                .max_rect(text_input_rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)));
+            let output = text_edit.show(&mut child_ui);
+            
+            if should_focus {
+                output.response.request_focus();
+                
+                // Select all text on first focus
+                if first_focus {
+                    use egui::text_selection::CursorRange;
+                    
+                    // Use the built-in select_all method
+                    let select_all_range = CursorRange::select_all(&output.galley);
+                    
+                    // Update the cursor state
+                    let mut new_state = output.state.clone();
+                    new_state.cursor.set_range(Some(select_all_range));
+                    
+                    // Store the updated state
+                    new_state.store(ui.ctx(), output.response.id);
+                }
+            }
+        }
+        
+        // Third scope: Draw subscript text using painter
+        if let Some(subscript_galley) = subscript_galley {
+            let painter = ui.painter();
+            let subscript_pos = egui::Pos2::new(
+                rect.center().x - subscript_size.x * 0.5,
+                text_input_rect.max.y + text_gap,
             );
             painter.galley(subscript_pos, subscript_galley.clone().into(), egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180));
         }

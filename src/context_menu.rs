@@ -34,6 +34,7 @@ pub fn handle_node_action(
     trigger: Trigger<NodeActionTriggered>,
     mut commands: Commands,
     mut editor_state: ResMut<EditorState>,
+    name_query: Query<&Name>,
 ) {
     let event = trigger.event();
     
@@ -48,19 +49,23 @@ pub fn handle_node_action(
                 ChildOf(event.entity),
                 Name::new("New State"),
             )).id();
-            
+        
             // Add the child as a leaf node in the editor at an offset position
             if let Some(parent_node) = editor_state.nodes.get(&event.entity) {
                 let parent_pos = match parent_node {
                     NodeType::Leaf(leaf_node) => leaf_node.entity_node.position,
                     NodeType::Parent(parent_node) => parent_node.entity_node.position,
                 };
-                
+            
                 // Position the child at an offset from the parent
                 let child_pos = parent_pos + egui::Vec2::new(50.0, 50.0);
                 let leaf_node = LeafNode::new(child_pos);
                 editor_state.nodes.insert(child_entity, NodeType::Leaf(leaf_node));
             }
+        }
+        NodeAction::Rename => {
+            let entity_name = name_query.get(event.entity).unwrap().to_string();
+            editor_state.text_editing.start_editing(event.entity, &entity_name);
         }
     }
 }
@@ -103,6 +108,16 @@ pub fn render_context_menu(
                             editor_state.context_menu_position = None;
                             ui.close_menu();
                         }
+                        
+                        if ui.button("Rename").clicked() {
+                            commands.trigger(NodeActionTriggered {
+                                entity,
+                                action: NodeAction::Rename,
+                            });
+                            editor_state.context_menu_entity = None;
+                            editor_state.context_menu_position = None;
+                            ui.close_menu();
+                        }
                     });
             });
         
@@ -118,3 +133,4 @@ pub fn render_context_menu(
         }
     }
 }
+
