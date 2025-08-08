@@ -76,7 +76,8 @@ impl Plugin for GearboxEditorPlugin {
 fn editor_ui_system(
     mut editor_context: Query<&mut EguiContext, (With<EditorWindow>, Without<bevy_egui::PrimaryEguiContext>)>,
     mut editor_state: ResMut<EditorState>,
-    state_machines: Query<(Entity, Option<&Name>), With<StateMachineRoot>>,
+    mut state_machines: Query<(Entity, Option<&Name>, Option<&mut StateMachineEditorData>), With<StateMachineRoot>>,
+    machine_list_query: Query<(Entity, Option<&Name>), With<StateMachineRoot>>,
     all_entities: Query<(Entity, Option<&Name>, Option<&InitialState>)>,
     child_of_query: Query<&ChildOf>,
     children_query: Query<&Children>,
@@ -86,22 +87,46 @@ fn editor_ui_system(
     if let Ok(mut egui_context) = editor_context.single_mut() {
         let ctx = egui_context.get_mut();
         
-        if editor_state.selected_machine.is_some() {
-            // Show the node editor for the selected machine
-            node_editor::show_machine_editor(
-                ctx,
-                &mut editor_state,
-                &all_entities,
-                &child_of_query,
-                &children_query,
-                &mut commands,
-            );
+        if let Some(selected_machine) = editor_state.selected_machine {
+            // Get the editor data for the selected machine
+            if let Ok((_, _, editor_data_opt)) = state_machines.get_mut(selected_machine) {
+                // Ensure the machine has editor data
+                let mut editor_data = if let Some(data) = editor_data_opt {
+                    data
+                } else {
+                    // Add the component if it doesn't exist
+                    commands.entity(selected_machine).insert(StateMachineEditorData::default());
+                    // For this frame, create a temporary default
+                    let mut temp_data = StateMachineEditorData::default();
+                    node_editor::show_machine_editor(
+                        ctx,
+                        &mut editor_state,
+                        &mut temp_data,
+                        &all_entities,
+                        &child_of_query,
+                        &children_query,
+                        &mut commands,
+                    );
+                    return;
+                };
+                
+                // Show the node editor for the selected machine
+                node_editor::show_machine_editor(
+                    ctx,
+                    &mut editor_state,
+                    &mut editor_data,
+                    &all_entities,
+                    &child_of_query,
+                    &children_query,
+                    &mut commands,
+                );
+            }
         } else {
             // Show the machine list
             machine_list::show_machine_list(
                 ctx,
                 &mut editor_state,
-                &state_machines,
+                &machine_list_query,
                 &mut commands,
             );
         }
@@ -114,25 +139,45 @@ fn editor_ui_system(
 /// Observer to handle transition creation requests
 fn handle_transition_creation_request(
     trigger: Trigger<TransitionCreationRequested>,
-    mut editor_state: ResMut<EditorState>,
+    editor_state: Res<EditorState>,
+    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
     type_registry: Res<AppTypeRegistry>,
 ) {
     let event = trigger.event();
     
+    // Get the currently selected state machine
+    let Some(selected_machine) = editor_state.selected_machine else {
+        return;
+    };
+    
+    let Ok(mut machine_data) = state_machines.get_mut(selected_machine) else {
+        return;
+    };
+    
     // Start the transition creation process
-    editor_state.transition_creation.start_transition(event.source_entity);
+    machine_data.transition_creation.start_transition(event.source_entity);
     
     // Discover available event types for TransitionListener
-    discover_transition_listener_event_types(&mut editor_state.transition_creation, &type_registry);
+    discover_transition_listener_event_types(&mut machine_data.transition_creation, &type_registry);
 }
 
 /// Observer to handle transition creation with selected event type
 fn handle_create_transition(
     trigger: Trigger<CreateTransition>,
-    mut editor_state: ResMut<EditorState>,
+    editor_state: Res<EditorState>,
+    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
+    
+    // Get the currently selected state machine
+    let Some(selected_machine) = editor_state.selected_machine else {
+        return;
+    };
+    
+    let Ok(mut machine_data) = state_machines.get_mut(selected_machine) else {
+        return;
+    };
     
     // Queue the transition creation as a command
     let source = event.source_entity;
@@ -154,12 +199,12 @@ fn handle_create_transition(
     });
     
     // Complete the transition creation process
-    editor_state.transition_creation.complete();
+    machine_data.transition_creation.complete();
     
     // Add the visual transition to the list for immediate display
     if let (Some(source_rect), Some(target_rect)) = (
-        editor_state.nodes.get(&event.source_entity).map(|n| n.current_rect()),
-        editor_state.nodes.get(&event.target_entity).map(|n| n.current_rect())
+        machine_data.nodes.get(&event.source_entity).map(|n| n.current_rect()),
+        machine_data.nodes.get(&event.target_entity).map(|n| n.current_rect())
     ) {
         // Position event node at midpoint between source and target initially
         let initial_event_position = egui::Pos2::new(
@@ -167,7 +212,7 @@ fn handle_create_transition(
             (source_rect.center().y + target_rect.center().y) / 2.0,
         );
         
-        editor_state.visual_transitions.push(TransitionConnection {
+        machine_data.visual_transitions.push(TransitionConnection {
             source_entity: event.source_entity,
             target_entity: event.target_entity,
             event_type: event.event_type.clone(),

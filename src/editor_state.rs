@@ -154,27 +154,46 @@ impl TransitionCreationState {
     }
 }
 
-/// Resource that holds the editor's current state
-#[derive(Resource, Default)]
-pub struct EditorState {
-    /// Currently selected state machine root entity
-    pub selected_machine: Option<Entity>,
+/// Component that holds state machine-specific editor data
+/// This lives on the root state machine entity and can be persisted
+#[derive(Component, Default)]
+pub struct StateMachineEditorData {
     /// Map of entity to its UI node representation
     pub nodes: HashMap<Entity, NodeType>,
     /// Currently selected node for z-ordering
     pub selected_node: Option<Entity>,
-    /// Entity for which a context menu is requested
-    pub context_menu_entity: Option<Entity>,
-    /// Position where the context menu should appear
-    pub context_menu_position: Option<Pos2>,
-    /// Entity currently being inspected
-    pub inspected_entity: Option<Entity>,
     /// Transition creation state
     pub transition_creation: TransitionCreationState,
     /// Visual transitions to render
     pub visual_transitions: Vec<TransitionConnection>,
     /// Text editing state for renaming nodes
     pub text_editing: TextEditingState,
+}
+
+/// Resource that holds the editor's UI/window state
+/// This manages which state machine is being edited in each window
+#[derive(Resource, Default)]
+pub struct EditorState {
+    /// Currently selected state machine root entity being edited
+    pub selected_machine: Option<Entity>,
+    /// Entity for which a context menu is requested
+    pub context_menu_entity: Option<Entity>,
+    /// Position where the context menu should appear
+    pub context_menu_position: Option<Pos2>,
+    /// Entity currently being inspected
+    pub inspected_entity: Option<Entity>,
+}
+
+impl EditorState {
+    /// Get the currently selected state machine entity
+    pub fn current_machine(&self) -> Option<Entity> {
+        self.selected_machine
+    }
+    
+    /// Set the currently selected state machine
+    pub fn set_current_machine(&mut self, entity: Option<Entity>) {
+        self.selected_machine = entity;
+    }
 }
 
 /// Component marking an entity as an editor window

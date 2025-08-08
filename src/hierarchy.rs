@@ -7,10 +7,10 @@
 //! - Managing InitialState components for parent entities
 
 use bevy::prelude::*;
-use bevy_gearbox::InitialState;
+use bevy_gearbox::{InitialState, StateMachineRoot};
 use std::collections::HashSet;
 
-use crate::editor_state::{EditorState, NodeDragged};
+use crate::editor_state::{EditorState, StateMachineEditorData, NodeDragged};
 use crate::components::NodeType;
 
 /// Observer to handle parent-child movement when nodes are dragged
@@ -19,11 +19,22 @@ use crate::components::NodeType;
 /// maintaining relative positions throughout the hierarchy.
 pub fn handle_parent_child_movement(
     trigger: Trigger<NodeDragged>,
-    mut editor_state: ResMut<EditorState>,
+    editor_state: Res<EditorState>,
+    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
     child_of_query: Query<(Entity, &ChildOf)>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
+    
+    // Get the currently selected state machine
+    let Some(selected_machine) = editor_state.selected_machine else {
+        return;
+    };
+    
+    // Get the machine data for the selected state machine
+    let Ok(mut machine_data) = state_machines.get_mut(selected_machine) else {
+        return;
+    };
     
     // Find all entities that are children of the dragged entity
     let mut children_to_move = Vec::new();
@@ -36,7 +47,7 @@ pub fn handle_parent_child_movement(
     
     // Move all children by the same delta as the parent
     for child_entity in children_to_move {
-        if let Some(child_node) = editor_state.nodes.get_mut(&child_entity) {
+        if let Some(child_node) = machine_data.nodes.get_mut(&child_entity) {
             match child_node {
                 NodeType::Leaf(leaf_node) => {
                     leaf_node.entity_node.position += event.drag_delta;
@@ -76,17 +87,26 @@ pub fn ensure_initial_states(
 /// Children are prevented from moving left or up outside their parent,
 /// but can move right and down freely (which will trigger parent expansion).
 pub fn constrain_children_to_parents(
-    mut editor_state: ResMut<EditorState>,
+    editor_state: Res<EditorState>,
+    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
     child_of_query: Query<(Entity, &ChildOf)>,
 ) {
+    let Some(selected_machine) = editor_state.selected_machine else {
+        return;
+    };
+    
+    let Ok(mut machine_data) = state_machines.get_mut(selected_machine) else {
+        return;
+    };
+    
     let child_entities: Vec<Entity> = child_of_query.iter()
         .filter_map(|(entity, _)| {
-            if editor_state.nodes.contains_key(&entity) { Some(entity) } else { None }
+            if machine_data.nodes.contains_key(&entity) { Some(entity) } else { None }
         })
         .collect();
     
     for child_entity in child_entities {
-        constrain_child_to_parent(child_entity, &mut editor_state, &child_of_query);
+        constrain_child_to_parent(child_entity, &mut machine_data, &child_of_query);
     }
 }
 
@@ -95,13 +115,13 @@ pub fn constrain_children_to_parents(
 /// Only constrains left and top edges - children can move right and down freely.
 fn constrain_child_to_parent(
     child_entity: Entity,
-    editor_state: &mut EditorState,
+    machine_data: &mut StateMachineEditorData,
     child_of_query: &Query<(Entity, &ChildOf)>,
 ) {
     if let Ok((_, child_of)) = child_of_query.get(child_entity) {
-        if let Some(parent_node) = editor_state.nodes.get(&child_of.0) {
+        if let Some(parent_node) = machine_data.nodes.get(&child_of.0) {
             if let NodeType::Parent(parent) = parent_node {
-                if let Some(child_node) = editor_state.nodes.get(&child_entity) {
+                if let Some(child_node) = machine_data.nodes.get(&child_entity) {
                     let child_rect = child_node.current_rect();
                     let content_rect = parent.content_rect();
                     let margin = egui::Vec2::new(10.0, 10.0);
@@ -115,7 +135,7 @@ fn constrain_child_to_parent(
                     
                     // Update child position if it was constrained
                     if constrained_pos != child_rect.min {
-                        if let Some(child_node) = editor_state.nodes.get_mut(&child_entity) {
+                        if let Some(child_node) = machine_data.nodes.get_mut(&child_entity) {
                             match child_node {
                                 NodeType::Leaf(leaf_node) => {
                                     leaf_node.entity_node.position = constrained_pos;
@@ -137,9 +157,17 @@ fn constrain_child_to_parent(
 /// Parents automatically expand to contain all their children, with a margin.
 /// This uses a bottom-up approach, processing leaf nodes first, then their parents.
 pub fn recalculate_parent_sizes(
-    mut editor_state: ResMut<EditorState>,
+    editor_state: Res<EditorState>,
+    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
     children_query: Query<&Children>,
 ) {
+    let Some(selected_machine) = editor_state.selected_machine else {
+        return;
+    };
+    
+    let Ok(mut machine_data) = state_machines.get_mut(selected_machine) else {
+        return;
+    };
     let mut processed_entities = HashSet::new();
     let mut made_progress = true;
     
@@ -148,7 +176,7 @@ pub fn recalculate_parent_sizes(
         made_progress = false;
         
         // Find parent entities whose children have all been processed
-        let parent_entities: Vec<Entity> = editor_state.nodes.keys().copied().collect();
+        let parent_entities: Vec<Entity> = machine_data.nodes.keys().copied().collect();
         
         for parent_entity in parent_entities {
             if processed_entities.contains(&parent_entity) {
@@ -165,12 +193,12 @@ pub fn recalculate_parent_sizes(
                 if all_children_ready {
                     // Collect child rectangles using an immutable borrow
                     let child_rects: Vec<egui::Rect> = children.iter()
-                        .filter_map(|child| editor_state.nodes.get(&child))
+                        .filter_map(|child| machine_data.nodes.get(&child))
                         .map(|node| node.current_rect())
                         .collect();
                     
                     // Now update the parent with a mutable borrow
-                    if let Some(NodeType::Parent(parent_node)) = editor_state.nodes.get_mut(&parent_entity) {
+                    if let Some(NodeType::Parent(parent_node)) = machine_data.nodes.get_mut(&parent_entity) {
                         parent_node.calculate_size_for_children(&child_rects);
                     }
                     

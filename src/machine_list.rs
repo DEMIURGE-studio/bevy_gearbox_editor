@@ -9,19 +9,20 @@ use bevy::prelude::*;
 use bevy_gearbox::StateMachineRoot;
 use bevy_egui::egui;
 
-use crate::editor_state::EditorState;
+use crate::editor_state::{EditorState, StateMachineEditorData};
 use crate::components::{NodeType, ParentNode};
 
-/// System to ensure all state machine entities have corresponding UI nodes
+/// System to ensure all state machine entities have StateMachineEditorData components
 pub fn ensure_node_actions(
-    mut editor_state: ResMut<EditorState>,
-    state_machines: Query<Entity, With<StateMachineRoot>>,
+    mut commands: Commands,
+    state_machines: Query<Entity, (With<StateMachineRoot>, Without<StateMachineEditorData>)>,
 ) {
     for entity in state_machines.iter() {
-        if !editor_state.nodes.contains_key(&entity) {
-            let parent_node = ParentNode::new(egui::Pos2::new(200.0, 100.0));
-            editor_state.nodes.insert(entity, NodeType::Parent(parent_node));
-        }
+        // Add the StateMachineEditorData component with a root node
+        let mut editor_data = StateMachineEditorData::default();
+        let parent_node = ParentNode::new(egui::Pos2::new(200.0, 100.0));
+        editor_data.nodes.insert(entity, NodeType::Parent(parent_node));
+        commands.entity(entity).insert(editor_data);
     }
 }
 

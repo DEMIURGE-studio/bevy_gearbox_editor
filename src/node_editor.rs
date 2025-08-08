@@ -11,7 +11,7 @@ use bevy_gearbox::{InitialState, StateMachineRoot};
 use bevy_egui::egui;
 use std::collections::HashSet;
 
-use crate::editor_state::{EditorState, NodeDragged, NodeContextMenuRequested, RenderItem, get_entity_name, should_get_selection_boost, TransitionCreationRequested, CreateTransition, draw_arrow, draw_interactive_pill_label};
+use crate::editor_state::{EditorState, StateMachineEditorData, NodeDragged, NodeContextMenuRequested, RenderItem, get_entity_name, should_get_selection_boost, TransitionCreationRequested, CreateTransition, draw_arrow, draw_interactive_pill_label, closest_point_on_rect_edge};
 use crate::components::{NodeType, LeafNode, ParentNode};
 
 /// System to update node types based on entity hierarchy
@@ -19,16 +19,14 @@ use crate::components::{NodeType, LeafNode, ParentNode};
 /// Converts leaf nodes to parent nodes when they gain children,
 /// and parent nodes back to leaf nodes when they lose all children.
 pub fn update_node_types(
-    mut editor_state: ResMut<EditorState>,
-    root_query: Query<Entity, With<StateMachineRoot>>,
+    editor_state: Res<EditorState>,
+    mut state_machines: Query<&mut StateMachineEditorData, With<StateMachineRoot>>,
     parent_query: Query<Entity, With<InitialState>>,
     leaf_query: Query<Entity, Without<InitialState>>,
     children_query: Query<&Children>,
 ) {
     if let Some(selected_root) = editor_state.selected_machine {
-        if !root_query.contains(selected_root) { 
-            return; 
-        }
+        if let Ok(mut machine_data) = state_machines.get_mut(selected_root) {
         
         // Get all entities in the selected state machine's hierarchy
         let mut descendants: Vec<Entity> = children_query
@@ -40,36 +38,36 @@ pub fn update_node_types(
         for &entity in &descendants {
             if parent_query.contains(entity) {
                 // Entity should be a parent node
-                match editor_state.nodes.get(&entity) {
+                match machine_data.nodes.get(&entity) {
                     Some(NodeType::Parent(_)) => {
                         // Already a parent node, no change needed
                     }
                     Some(NodeType::Leaf(leaf_node)) => {
                         // Convert leaf to parent
                         let parent_node = ParentNode::new(leaf_node.entity_node.position);
-                        editor_state.nodes.insert(entity, NodeType::Parent(parent_node));
+                        machine_data.nodes.insert(entity, NodeType::Parent(parent_node));
                     }
                     None => {
                         // Create new parent node
                         let parent_node = ParentNode::new(egui::Pos2::new(200.0, 100.0));
-                        editor_state.nodes.insert(entity, NodeType::Parent(parent_node));
+                        machine_data.nodes.insert(entity, NodeType::Parent(parent_node));
                     }
                 }
             } else if leaf_query.contains(entity) {
                 // Entity should be a leaf node
-                match editor_state.nodes.get(&entity) {
+                match machine_data.nodes.get(&entity) {
                     Some(NodeType::Leaf(_)) => {
                         // Already a leaf node, no change needed
                     }
                     Some(NodeType::Parent(parent_node)) => {
                         // Convert parent to leaf
                         let leaf_node = LeafNode::new(parent_node.entity_node.position);
-                        editor_state.nodes.insert(entity, NodeType::Leaf(leaf_node));
+                        machine_data.nodes.insert(entity, NodeType::Leaf(leaf_node));
                     }
                     None => {
                         // Create new leaf node
                         let leaf_node = LeafNode::new(egui::Pos2::new(100.0, 100.0));
-                        editor_state.nodes.insert(entity, NodeType::Leaf(leaf_node));
+                        machine_data.nodes.insert(entity, NodeType::Leaf(leaf_node));
                     }
                 }
             }
@@ -77,7 +75,8 @@ pub fn update_node_types(
         
         // Remove nodes that are no longer part of the active hierarchy
         let valid_entities: HashSet<Entity> = descendants.into_iter().collect();
-        editor_state.nodes.retain(|entity, _| valid_entities.contains(entity));
+        machine_data.nodes.retain(|entity, _| valid_entities.contains(entity));
+        }
     }
 }
 
@@ -85,6 +84,7 @@ pub fn update_node_types(
 pub fn show_machine_editor(
     ctx: &egui::Context,
     editor_state: &mut EditorState,
+    machine_data: &mut StateMachineEditorData,
     all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
     child_of_query: &Query<&ChildOf>,
     children_query: &Query<&Children>,
@@ -95,9 +95,7 @@ pub fn show_machine_editor(
         ui.horizontal(|ui| {
             if ui.button("← Back to Machine List").clicked() {
                 editor_state.selected_machine = None;
-                editor_state.selected_node = None;
-                // Clear nodes when going back
-                editor_state.nodes.clear();
+                machine_data.selected_node = None;
             }
             
             if let Some(selected_root) = editor_state.selected_machine {
@@ -120,9 +118,9 @@ pub fn show_machine_editor(
             hierarchy_entities.insert(0, selected_root);
             
             for (hierarchy_index, entity) in hierarchy_entities.iter().enumerate() {
-                if let Some(_node) = editor_state.nodes.get(entity) {
+                if let Some(_node) = machine_data.nodes.get(entity) {
                     let base_z_order = hierarchy_index as i32 * 10;
-                    let selection_boost = if should_get_selection_boost(*entity, editor_state.selected_node, child_of_query) { 
+                    let selection_boost = if should_get_selection_boost(*entity, machine_data.selected_node, child_of_query) { 
                         5 
                     } else { 
                         0 
@@ -143,41 +141,41 @@ pub fn show_machine_editor(
                 let entity = render_item.entity;
                 let entity_name = get_entity_name(entity, all_entities);
                 
-                if let Some(node) = editor_state.nodes.get_mut(&entity) {
-                    let is_selected = editor_state.selected_node == Some(entity);
+                if let Some(node) = machine_data.nodes.get_mut(&entity) {
+                    let is_selected = machine_data.selected_node == Some(entity);
                     let is_root = selected_root == entity;
-                    let is_editing = editor_state.text_editing.is_editing(entity);
-                    let should_focus = editor_state.text_editing.should_focus;
+                    let is_editing = machine_data.text_editing.is_editing(entity);
+                    let should_focus = machine_data.text_editing.should_focus;
                     
-                    let first_focus = editor_state.text_editing.first_focus;
+                    let first_focus = machine_data.text_editing.first_focus;
                     
                     let response = match node {
                         NodeType::Leaf(leaf_node) => {
-                            leaf_node.show(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut editor_state.text_editing.current_text, should_focus, first_focus)
+                            leaf_node.show(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut machine_data.text_editing.current_text, should_focus, first_focus)
                         }
                         NodeType::Parent(parent_node) => {
-                            parent_node.show(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut editor_state.text_editing.current_text, should_focus, first_focus)
+                            parent_node.show(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut machine_data.text_editing.current_text, should_focus, first_focus)
                         }
                     };
                     
                     // Clear focus flag after first frame
                     if should_focus {
-                        editor_state.text_editing.should_focus = false;
+                        machine_data.text_editing.should_focus = false;
                     }
                     
                     // Clear first focus flag after it's been used
                     if first_focus {
-                        editor_state.text_editing.first_focus = false;
+                        machine_data.text_editing.first_focus = false;
                     }
                     
                     // Handle selection
                     if response.clicked {
                         // Check if we're in transition creation mode and waiting for target selection
-                        if editor_state.transition_creation.awaiting_target_selection {
+                        if machine_data.transition_creation.awaiting_target_selection {
                             let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
-                            editor_state.transition_creation.set_target(entity, pointer_pos);
+                            machine_data.transition_creation.set_target(entity, pointer_pos);
                         } else {
-                            editor_state.selected_node = Some(entity);
+                            machine_data.selected_node = Some(entity);
                         }
                     }
                     
@@ -210,60 +208,78 @@ pub fn show_machine_editor(
             }
             
             // Update transition rectangles before rendering
-            update_transition_rectangles(editor_state);
+            update_transition_rectangles(machine_data);
             
             // Render transition arrows after all nodes
-            render_transition_connections(ui, editor_state);
+            render_transition_connections(ui, machine_data);
             
             // Render initial state indicators
-            render_initial_state_indicators(ui, editor_state, &all_entities, selected_root);
+            render_initial_state_indicators(ui, machine_data, &all_entities, selected_root);
+            
+            // Handle background clicks to cancel transition creation
+            if machine_data.transition_creation.awaiting_target_selection {
+                // Check for clicks on background (not handled by any node)
+                if ui.input(|i| i.pointer.primary_clicked()) {
+                    let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
+                    let clicked_on_node = machine_data.nodes.values().any(|node| {
+                        node.current_rect().contains(pointer_pos)
+                    });
+                    
+                    if !clicked_on_node {
+                        machine_data.transition_creation.cancel();
+                    }
+                }
+            }
         } else {
             ui.label("No state machine selected");
         }
         
         // Handle text editing completion
-        handle_text_editing_completion(ui, editor_state, commands);
+        handle_text_editing_completion(ui, machine_data, commands);
         
         // Render transition creation UI
-        render_transition_creation_ui(ui, editor_state, commands);
+        render_transition_creation_ui(ui, machine_data, commands);
     });
 }
 
 /// Render the transition creation dropdown UI
 fn render_transition_creation_ui(
     ui: &mut egui::Ui,
-    editor_state: &mut EditorState,
+    machine_data: &mut StateMachineEditorData,
     commands: &mut Commands,
 ) {
     // Show visual arrow from source to mouse if we're waiting for target selection
-    if editor_state.transition_creation.awaiting_target_selection {
-        if let Some(source) = editor_state.transition_creation.source_entity {
+    if machine_data.transition_creation.awaiting_target_selection {
+        if let Some(source) = machine_data.transition_creation.source_entity {
             // Draw arrow from source entity to mouse cursor
-            if let Some(source_node) = editor_state.nodes.get(&source) {
+            if let Some(source_node) = machine_data.nodes.get(&source) {
                 let mouse_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
                 let source_rect = source_node.current_rect();
-                let source_center = source_rect.center();
                 
-                // Draw a dashed line from source to mouse
+                // Draw from the edge of the source node to the mouse cursor
+                let source_edge = closest_point_on_rect_edge(source_rect, mouse_pos);
+                
+                // Draw a dashed line from source edge to mouse (white color)
                 let painter = ui.painter();
-                draw_dashed_arrow(&painter, source_center, mouse_pos, egui::Color32::from_rgb(100, 150, 255));
+                draw_dashed_arrow(&painter, source_edge, mouse_pos, egui::Color32::WHITE);
             }
             
-            // Show small cancel button in corner
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                if ui.small_button("Cancel").clicked() {
-                    editor_state.transition_creation.cancel();
-                }
-            });
+            // Check for cancellation via right-click, escape key, or clicking background
+            if ui.input(|i| {
+                i.pointer.secondary_clicked() || // Right click
+                i.key_pressed(egui::Key::Escape) // Escape key
+            }) {
+                machine_data.transition_creation.cancel();
+            }
         }
     }
     
     // Show event type dropdown
-    if editor_state.transition_creation.show_event_dropdown {
+    if machine_data.transition_creation.show_event_dropdown {
         if let (Some(source), Some(target), Some(position)) = (
-            editor_state.transition_creation.source_entity,
-            editor_state.transition_creation.target_entity,
-            editor_state.transition_creation.dropdown_position,
+            machine_data.transition_creation.source_entity,
+            machine_data.transition_creation.target_entity,
+            machine_data.transition_creation.dropdown_position,
         ) {
             let dropdown_id = egui::Id::new("transition_event_dropdown");
             
@@ -277,11 +293,11 @@ fn render_transition_creation_ui(
                             ui.heading("Select Event Type");
                             ui.separator();
                             
-                            if editor_state.transition_creation.available_event_types.is_empty() {
+                            if machine_data.transition_creation.available_event_types.is_empty() {
                                 ui.label("No TransitionListener event types found.");
                                 ui.label("Make sure event types are registered with the type registry.");
                             } else {
-                                for event_type in &editor_state.transition_creation.available_event_types.clone() {
+                                for event_type in &machine_data.transition_creation.available_event_types.clone() {
                                     if ui.button(event_type).clicked() {
                                         commands.trigger(CreateTransition {
                                             source_entity: source,
@@ -294,7 +310,7 @@ fn render_transition_creation_ui(
                             
                             ui.separator();
                             if ui.button("Cancel").clicked() {
-                                editor_state.transition_creation.cancel();
+                                machine_data.transition_creation.cancel();
                             }
                         });
                 });
@@ -305,7 +321,7 @@ fn render_transition_creation_ui(
                 let dropdown_rect = egui::Rect::from_min_size(position, egui::Vec2::new(200.0, 150.0));
                 
                 if !dropdown_rect.contains(pointer_pos) {
-                    editor_state.transition_creation.cancel();
+                    machine_data.transition_creation.cancel();
                 }
             }
         }
@@ -315,10 +331,10 @@ fn render_transition_creation_ui(
 /// Render visual connections for existing transitions
 fn render_transition_connections(
     ui: &mut egui::Ui,
-    editor_state: &mut EditorState,
+    machine_data: &mut StateMachineEditorData,
 ) {
     // Extract data needed for rendering to avoid borrowing issues
-    let transitions_data: Vec<_> = editor_state.visual_transitions.iter().enumerate().map(|(index, transition)| {
+    let transitions_data: Vec<_> = machine_data.visual_transitions.iter().enumerate().map(|(index, transition)| {
         (index, 
          transition.calculate_two_segment_points(),
          transition.event_node_position,
@@ -354,7 +370,7 @@ fn render_transition_connections(
     
     // Process interactions after rendering
     for (index, response) in interaction_data {
-        let transition = &mut editor_state.visual_transitions[index];
+        let transition = &mut machine_data.visual_transitions[index];
         
         // Handle event node dragging
         if response.drag_started() {
@@ -374,12 +390,12 @@ fn render_transition_connections(
 }
 
 /// Update the rectangles in visual transitions to match current node positions
-fn update_transition_rectangles(editor_state: &mut EditorState) {
-    for transition in &mut editor_state.visual_transitions {
-        if let Some(source_node) = editor_state.nodes.get(&transition.source_entity) {
+fn update_transition_rectangles(machine_data: &mut StateMachineEditorData) {
+    for transition in &mut machine_data.visual_transitions {
+        if let Some(source_node) = machine_data.nodes.get(&transition.source_entity) {
             transition.source_rect = source_node.current_rect();
         }
-        if let Some(target_node) = editor_state.nodes.get(&transition.target_entity) {
+        if let Some(target_node) = machine_data.nodes.get(&transition.target_entity) {
             transition.target_rect = target_node.current_rect();
         }
         
@@ -393,10 +409,10 @@ fn update_transition_rectangles(editor_state: &mut EditorState) {
 /// Handle text editing completion (Enter key or click outside)
 fn handle_text_editing_completion(
     ui: &mut egui::Ui,
-    editor_state: &mut EditorState,
+    machine_data: &mut StateMachineEditorData,
     commands: &mut Commands,
 ) {
-    if editor_state.text_editing.editing_entity.is_some() {
+    if machine_data.text_editing.editing_entity.is_some() {
         let should_complete = ui.input(|i| {
             // Complete on Enter key
             i.key_pressed(egui::Key::Enter) ||
@@ -411,8 +427,8 @@ fn handle_text_editing_completion(
         if should_complete {
             if is_escape {
                 info!("❌ Cancelled text editing");
-                editor_state.text_editing.cancel_editing();
-            } else if let Some((entity, new_name)) = editor_state.text_editing.stop_editing() {
+                machine_data.text_editing.cancel_editing();
+            } else if let Some((entity, new_name)) = machine_data.text_editing.stop_editing() {
                 info!("💾 Completing text edit for entity {:?} with name '{}'", entity, new_name);
                 // Update the entity's name if it's not empty
                 let trimmed_name = new_name.trim();
@@ -430,7 +446,7 @@ fn handle_text_editing_completion(
 /// Render initial state indicators (circle + arrow) for entities marked as InitialState
 fn render_initial_state_indicators(
     ui: &mut egui::Ui,
-    editor_state: &EditorState,
+    machine_data: &StateMachineEditorData,
     all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
     selected_root: Entity,
 ) {
@@ -443,8 +459,8 @@ fn render_initial_state_indicators(
             
             // Only render if both parent and target are in our editor nodes and belong to current state machine
             if let (Some(_parent_node), Some(target_node)) = (
-                editor_state.nodes.get(&parent_entity),
-                editor_state.nodes.get(&target_entity)
+                machine_data.nodes.get(&parent_entity),
+                machine_data.nodes.get(&target_entity)
             ) {
                 // Check if this belongs to the currently selected state machine
                 // (We can do this by checking if the parent entity is a child of selected_root or is selected_root)
@@ -452,7 +468,7 @@ fn render_initial_state_indicators(
                     all_entities.iter().any(|(entity, _, _)| {
                         entity == selected_root && 
                         // This is a simplified check - in a real implementation you'd traverse the hierarchy
-                        true // For now, assume all nodes in editor_state.nodes belong to current machine
+                        true // For now, assume all nodes in machine_data.nodes belong to current machine
                     });
                 
                 if belongs_to_current_machine {
