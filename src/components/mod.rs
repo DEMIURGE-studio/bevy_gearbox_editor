@@ -2,6 +2,7 @@ pub mod entity_node;
 pub mod leaf_node;
 pub mod parent_node;
 
+use egui::Pos2;
 pub use entity_node::*;
 pub use leaf_node::*;
 pub use parent_node::*;
@@ -19,6 +20,13 @@ impl NodeType {
         match self {
             NodeType::Leaf(leaf_node) => leaf_node.entity_node.current_rect(),
             NodeType::Parent(parent_node) => parent_node.entity_node.current_rect(),
+        }
+    }
+
+    pub fn position(&self) -> Pos2 {
+        match self {
+            NodeType::Leaf(leaf_node) => leaf_node.entity_node.position,
+            NodeType::Parent(parent_node) => parent_node.entity_node.position,
         }
     }
 }

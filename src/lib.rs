@@ -18,6 +18,7 @@ mod window_management;
 mod entity_inspector;
 mod machine_list;
 pub mod components;
+pub mod reflectable;
 
 // Re-exports
 pub use editor_state::*;
