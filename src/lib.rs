@@ -227,9 +227,6 @@ fn handle_create_transition(
             &event_type,
         ) {
             warn!("Failed to create transition: {}", e);
-        } else {
-            info!("✅ Created TransitionListener<{}> from {:?} to {:?}", 
-                  event_type, source, target);
         }
     });
     
@@ -527,8 +524,6 @@ fn handle_delete_node(
     let event = trigger.event();
     let entity_to_delete = event.entity;
     
-    info!("🗑️ Starting deletion process for entity {:?}", entity_to_delete);
-    
     // Find the state machine root that contains this entity
     let state_machine_root = bevy_gearbox::find_state_machine_root(
         entity_to_delete, 
@@ -556,8 +551,6 @@ fn handle_delete_node(
     let mut entities_to_delete = Vec::new();
     collect_entities_recursively(entity_to_delete, &children_query, &mut entities_to_delete);
     
-    info!("📋 Will delete {} entities: {:?}", entities_to_delete.len(), entities_to_delete);
-    
     // Step 1: Remove all transitions involving any of the entities to be deleted
     remove_transitions_for_entities(&entities_to_delete, &mut persistent_data, &mut commands);
     
@@ -571,16 +564,12 @@ fn handle_delete_node(
     // Step 3: Remove visual data for all deleted entities
     for entity in &entities_to_delete {
         persistent_data.nodes.remove(entity);
-        info!("🧹 Removed visual data for entity {:?}", entity);
     }
     
     // Step 4: Actually delete the entities
     for entity in entities_to_delete {
         commands.entity(entity).despawn();
-        info!("💀 Despawned entity {:?}", entity);
     }
-    
-    info!("✅ Node deletion completed successfully");
 }
 
 /// Recursively collect all entities in a hierarchy
@@ -614,13 +603,8 @@ fn remove_transitions_for_entities(
         .cloned()
         .collect();
     
-    info!("🔗 Found {} transitions to delete", transitions_to_delete.len());
-    
     // Use our existing DeleteTransition event system to handle component removal
     for transition in transitions_to_delete {
-        info!("🔗 Deleting transition: {:?} -> {:?} ({})", 
-              transition.source_entity, transition.target_entity, transition.event_type);
-        
         // Only remove the component if the source entity is not being deleted
         // (if it's being deleted, the component will be removed automatically)
         if !entities_to_delete.contains(&transition.source_entity) {
@@ -629,25 +613,15 @@ fn remove_transitions_for_entities(
                 target_entity: transition.target_entity,
                 event_type: transition.event_type.clone(),
             });
-        } else {
-            // Just remove the visual transition since the entity (and its components) will be deleted
-            info!("🔗 Source entity {:?} will be deleted, component removal handled automatically", 
-                  transition.source_entity);
         }
     }
     
     // Remove visual transitions involving deleted entities
-    let initial_count = persistent_data.visual_transitions.len();
     persistent_data.visual_transitions.retain(|transition| {
         let should_keep = !entities_to_delete.contains(&transition.source_entity) && 
                          !entities_to_delete.contains(&transition.target_entity);
         should_keep
     });
-    let final_count = persistent_data.visual_transitions.len();
-    
-    if initial_count > final_count {
-        info!("🧹 Removed {} visual transitions from persistent data", initial_count - final_count);
-    }
 }
 
 
@@ -661,8 +635,6 @@ fn handle_parent_state_changes(
     initial_state_query: &Query<&InitialState>,
     commands: &mut Commands,
 ) {
-    info!("👨‍👩‍👧‍👦 Handling parent state changes for {:?}", parent_entity);
-    
     // Get remaining children after deletion
     let remaining_children: Vec<Entity> = if let Ok(children) = children_query.get(parent_entity) {
         let mut remaining = Vec::new();
@@ -676,12 +648,9 @@ fn handle_parent_state_changes(
         Vec::new()
     };
     
-    info!("👶 Parent {:?} will have {} remaining children", parent_entity, remaining_children.len());
-    
     // Case 1: No children left - convert parent to leaf by removing InitialState
     if remaining_children.is_empty() {
         commands.entity(parent_entity).remove::<InitialState>();
-        info!("🍃 Converted parent {:?} to leaf (no children remaining)", parent_entity);
         return;
     }
     
@@ -693,8 +662,6 @@ fn handle_parent_state_changes(
             // The initial state was deleted, assign a new one
             let new_initial_state = remaining_children[0]; // Pick the first remaining child
             commands.entity(parent_entity).insert(InitialState(new_initial_state));
-            info!("🎯 Reassigned initial state for parent {:?}: {:?} -> {:?}", 
-                  parent_entity, initial_state_entity, new_initial_state);
         }
     }
 }

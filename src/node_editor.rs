@@ -459,15 +459,12 @@ fn handle_text_editing_completion(
         
         if should_complete {
             if is_escape {
-                info!("❌ Cancelled text editing");
                 transient_data.text_editing.cancel_editing();
             } else if let Some((entity, new_name)) = transient_data.text_editing.stop_editing() {
-                info!("💾 Completing text edit for entity {:?} with name '{}'", entity, new_name);
                 // Update the entity's name if it's not empty
                 let trimmed_name = new_name.trim();
                 if !trimmed_name.is_empty() {
                     commands.entity(entity).insert(Name::new(trimmed_name.to_string()));
-                    info!("✅ Updated entity {:?} name to '{}'", entity, trimmed_name);
                 } else {
                     info!("⚠️ Ignoring empty name for entity {:?}", entity);
                 }
