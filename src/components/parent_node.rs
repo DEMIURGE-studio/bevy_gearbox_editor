@@ -104,6 +104,7 @@ impl ParentNode {
         editing_text: &mut String,
         should_focus: bool,
         first_focus: bool,
+        custom_color: Option<egui::Color32>,
     ) -> NodeResponse {
         let rect = self.rect();
         let title_rect = self.title_bar_rect();
@@ -140,7 +141,7 @@ impl ParentNode {
         node_response.hovered = response.hovered();
         
         // Draw the parent node (with editing support)
-        self.draw_parent_node_with_editing(ui, rect, title_rect, name, entity_id, is_editing, editing_text, should_focus, first_focus);
+        self.draw_parent_node_with_editing(ui, rect, title_rect, name, entity_id, is_editing, editing_text, should_focus, first_focus, custom_color);
         
         // Add the + button for transitions (only if selected and not root)
         if is_selected && !is_root {
@@ -200,11 +201,12 @@ impl ParentNode {
         editing_text: &mut String,
         should_focus: bool,
         first_focus: bool,
+        custom_color: Option<egui::Color32>,
     ) {
         if is_editing {
             self.draw_parent_node_editing(ui, rect, title_rect, entity_id, editing_text, should_focus, first_focus);
         } else {
-            self.draw_parent_node_normal(ui, rect, title_rect, name, entity_id);
+            self.draw_parent_node_normal(ui, rect, title_rect, name, entity_id, custom_color);
         }
     }
 
@@ -216,9 +218,10 @@ impl ParentNode {
         title_rect: Rect,
         name: &str,
         entity_id: Option<&str>,
+        custom_color: Option<egui::Color32>,
     ) {
         let painter = ui.painter();
-        let bg_color = self.entity_node.current_bg_color();
+        let bg_color = custom_color.unwrap_or_else(|| self.entity_node.current_bg_color());
         
         // Draw main container background
         painter.rect_filled(
@@ -264,24 +267,41 @@ impl ParentNode {
             egui::Stroke::new(1.0, self.entity_node.border_color),
         );
         
+        // Determine text color based on background color
+        let text_color = if let Some(bg_color) = custom_color {
+            // If background is gold (active), use black text
+            if bg_color == egui::Color32::from_rgb(255, 215, 0) {
+                egui::Color32::BLACK
+            } else {
+                self.entity_node.text_color
+            }
+        } else {
+            self.entity_node.text_color
+        };
+        
         // Draw title text (name and entity ID side by side)
         let font_id = self.entity_node.main_font_id();
-        let name_galley = ui.fonts(|f| f.layout_no_wrap(name.to_string(), font_id.clone(), self.entity_node.text_color));
+        let name_galley = ui.fonts(|f| f.layout_no_wrap(name.to_string(), font_id.clone(), text_color));
         
         // Position name text in title bar
         let text_start_x = title_rect.min.x + self.entity_node.padding.x;
         let text_y = title_rect.center().y - name_galley.size().y * 0.5;
         let name_pos = egui::Pos2::new(text_start_x, text_y);
         
-        painter.galley(name_pos, name_galley.clone(), self.entity_node.text_color);
+        painter.galley(name_pos, name_galley.clone(), text_color);
         
         // Draw entity ID if provided (to the right of the name)
         if let Some(entity_id) = entity_id {
             let entity_font_id = self.entity_node.subscript_font_id();
+            let entity_id_color = if text_color == egui::Color32::BLACK {
+                Color32::from_rgba_unmultiplied(0, 0, 0, 180) // Semi-transparent black
+            } else {
+                Color32::from_rgba_unmultiplied(255, 255, 255, 180) // Semi-transparent white
+            };
             let entity_galley = ui.fonts(|f| f.layout_no_wrap(
                 format!(" ({})", entity_id),
                 entity_font_id,
-                Color32::from_rgba_unmultiplied(255, 255, 255, 180)
+                entity_id_color
             ));
             
             let entity_pos = egui::Pos2::new(
@@ -289,7 +309,7 @@ impl ParentNode {
                 text_y + (name_galley.size().y - entity_galley.size().y) * 0.5,
             );
             
-            painter.galley(entity_pos, entity_galley, Color32::from_rgba_unmultiplied(255, 255, 255, 180));
+            painter.galley(entity_pos, entity_galley, entity_id_color);
         }
         
         // Draw content area outline (for debugging/visualization)

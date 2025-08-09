@@ -25,6 +25,7 @@ pub use editor_state::*;
 
 // Additional imports for transition creation
 use bevy::ecs::reflect::ReflectComponent;
+use bevy::prelude::AppTypeRegistry;
 
 /// Schedule label for the editor window context
 #[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
@@ -59,16 +60,20 @@ impl Plugin for GearboxEditorPlugin {
                 node_editor::update_node_types,
                 hierarchy::constrain_children_to_parents,
                 hierarchy::recalculate_parent_sizes,
+                update_transition_pulses,
             ).chain());
 
         // Add observers
         app.add_observer(context_menu::handle_context_menu_request)
             .add_observer(context_menu::handle_node_action)
+            .add_observer(context_menu::handle_transition_context_menu_request)
             .add_observer(hierarchy::handle_parent_child_movement)
             .add_observer(handle_transition_creation_request)
             .add_observer(handle_create_transition)
             .add_observer(handle_save_state_machine)
-            .add_observer(reflectable::on_add_reflectable_state_machine);
+            .add_observer(reflectable::on_add_reflectable_state_machine)
+            .add_observer(handle_transition_pulse)
+            .add_observer(handle_delete_transition);
     }
 }
 
@@ -82,6 +87,7 @@ fn editor_ui_system(
     all_entities: Query<(Entity, Option<&Name>, Option<&InitialState>)>,
     child_of_query: Query<&ChildOf>,
     children_query: Query<&Children>,
+    active_query: Query<&bevy_gearbox::active::Active>,
     mut commands: Commands,
 ) {
     // Only run if there's an editor window
@@ -108,6 +114,7 @@ fn editor_ui_system(
                         &all_entities,
                         &child_of_query,
                         &children_query,
+                        &active_query,
                         &mut commands,
                     );
                     return;
@@ -129,6 +136,7 @@ fn editor_ui_system(
                         &all_entities,
                         &child_of_query,
                         &children_query,
+                        &active_query,
                         &mut commands,
                     );
                     return;
@@ -143,6 +151,7 @@ fn editor_ui_system(
                     &all_entities,
                     &child_of_query,
                     &children_query,
+                    &active_query,
                     &mut commands,
                 );
             }
@@ -398,5 +407,109 @@ fn handle_save_state_machine(
             }
         }
     });
+}
+
+/// Observer to handle transition deletion requests
+fn handle_delete_transition(
+    trigger: Trigger<DeleteTransition>,
+    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
+    child_of_query: Query<&ChildOf>,
+    state_machine_root_query: Query<&StateMachineRoot>,
+    mut commands: Commands,
+) {
+    let event = trigger.event();
+    
+    // Find the state machine root that contains the source entity
+    let state_machine_root = bevy_gearbox::find_state_machine_root(
+        event.source_entity, 
+        &child_of_query, 
+        &state_machine_root_query
+    );
+    
+    if let Some(root_entity) = state_machine_root {
+        // Remove the visual transition from persistent data
+        if let Ok(mut persistent_data) = state_machines.get_mut(root_entity) {
+            let initial_count = persistent_data.visual_transitions.len();
+            persistent_data.visual_transitions.retain(|transition| {
+                !(transition.source_entity == event.source_entity &&
+                  transition.target_entity == event.target_entity &&
+                  transition.event_type == event.event_type)
+            });
+            let final_count = persistent_data.visual_transitions.len();
+            
+            if initial_count > final_count {
+                info!("✅ Removed visual transition from {:?} to {:?} ({}) - {} transitions remaining", 
+                      event.source_entity, event.target_entity, event.event_type, final_count);
+            } else {
+                warn!("⚠️ No matching visual transition found to remove: {:?} -> {:?} ({})", 
+                      event.source_entity, event.target_entity, event.event_type);
+            }
+        } else {
+            warn!("⚠️ Could not find state machine persistent data for root {:?}", root_entity);
+        }
+    } else {
+        warn!("⚠️ Could not find state machine root for entity {:?}", event.source_entity);
+    }
+    
+    // Remove the TransitionListener component from the source entity
+    let source_entity = event.source_entity;
+    let event_type = event.event_type.clone();
+    
+    commands.queue(move |world: &mut World| {
+        // We need to use reflection to remove the correct TransitionListener<E> component
+        let registry = world.resource::<AppTypeRegistry>().clone();
+        let registry = registry.read();
+        
+        // Find all registered TransitionListener types
+        for registration in registry.iter() {
+            let type_info = registration.type_info();
+            let type_name = type_info.type_path_table().short_path();
+            if type_name.starts_with("TransitionListener<") && type_name.contains(&event_type) {
+                if let Some(reflect_component) = registration.data::<ReflectComponent>() {
+                    // Check if this entity has this component
+                    if reflect_component.reflect(world.entity(source_entity)).is_some() {
+                        // Remove the component
+                        reflect_component.remove(&mut world.entity_mut(source_entity));
+                        info!("✅ Removed TransitionListener<{}> from entity {:?}", event_type, source_entity);
+                        break;
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Observer to handle transition events and create pulse animations
+fn handle_transition_pulse(
+    trigger: Trigger<bevy_gearbox::Transition>,
+    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachineRoot>>,
+    _child_of_query: Query<&ChildOf>,
+) {
+    let event = trigger.event();
+    let target_entity = trigger.target(); // This is the state machine root
+    
+    // Add pulse to the state machine's transient data
+    if let Ok(mut transient_data) = state_machines.get_mut(target_entity) {
+        transient_data.transition_pulses.push(TransitionPulse::new(
+            event.source, 
+            event.connection.target
+        ));
+    }
+}
+
+/// System to update transition pulse timers and remove expired pulses
+fn update_transition_pulses(
+    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachineRoot>>,
+    time: Res<Time>,
+) {
+    for mut transient_data in state_machines.iter_mut() {
+        // Update all pulse timers
+        for pulse in transient_data.transition_pulses.iter_mut() {
+            pulse.timer.tick(time.delta());
+        }
+        
+        // Remove finished pulses
+        transient_data.transition_pulses.retain(|pulse| !pulse.timer.finished());
+    }
 }
 

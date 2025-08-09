@@ -7,11 +7,12 @@
 //! - Node interaction and dragging
 
 use bevy::prelude::*;
+use bevy_gearbox::active::Active;
 use bevy_gearbox::{InitialState, StateMachineRoot};
 use bevy_egui::egui;
 use std::collections::HashSet;
 
-use crate::editor_state::{EditorState, StateMachinePersistentData, StateMachineTransientData, NodeDragged, NodeContextMenuRequested, RenderItem, get_entity_name, should_get_selection_boost, TransitionCreationRequested, CreateTransition, SaveStateMachine, draw_arrow, draw_interactive_pill_label, closest_point_on_rect_edge};
+use crate::editor_state::{EditorState, StateMachinePersistentData, StateMachineTransientData, NodeDragged, NodeContextMenuRequested, TransitionContextMenuRequested, RenderItem, get_entity_name, should_get_selection_boost, TransitionCreationRequested, CreateTransition, SaveStateMachine, draw_arrow, draw_interactive_pill_label, closest_point_on_rect_edge, get_node_color, get_transition_color};
 use crate::components::{NodeType, LeafNode, ParentNode};
 
 /// System to update node types based on entity hierarchy
@@ -89,6 +90,7 @@ pub fn show_machine_editor(
     all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
     child_of_query: &Query<&ChildOf>,
     children_query: &Query<&Children>,
+    active_query: &Query<&Active>,
     commands: &mut Commands,
 ) {
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -156,12 +158,15 @@ pub fn show_machine_editor(
                     
                     let first_focus = transient_data.text_editing.first_focus;
                     
+                    // Determine node color based on active state
+                    let node_color = Some(get_node_color(entity, active_query));
+                    
                     let response = match node {
                         NodeType::Leaf(leaf_node) => {
-                            leaf_node.show(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut transient_data.text_editing.current_text, should_focus, first_focus)
+                            leaf_node.show(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut transient_data.text_editing.current_text, should_focus, first_focus, node_color)
                         }
                         NodeType::Parent(parent_node) => {
-                            parent_node.show(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut transient_data.text_editing.current_text, should_focus, first_focus)
+                            parent_node.show(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut transient_data.text_editing.current_text, should_focus, first_focus, node_color)
                         }
                     };
                     
@@ -218,7 +223,7 @@ pub fn show_machine_editor(
             update_transition_rectangles(persistent_data);
             
             // Render transition arrows after all nodes
-            render_transition_connections(ui, persistent_data);
+            render_transition_connections(ui, persistent_data, transient_data, commands);
             
             // Render initial state indicators
             render_initial_state_indicators(ui, persistent_data, &all_entities, selected_root);
@@ -340,28 +345,36 @@ fn render_transition_creation_ui(
 fn render_transition_connections(
     ui: &mut egui::Ui,
     persistent_data: &mut StateMachinePersistentData,
+    transient_data: &StateMachineTransientData,
+    commands: &mut Commands,
 ) {
     // Extract data needed for rendering to avoid borrowing issues
     let transitions_data: Vec<_> = persistent_data.visual_transitions.iter().enumerate().map(|(index, transition)| {
+        let transition_color = get_transition_color(
+            transition.source_entity, 
+            transition.target_entity, 
+            &transient_data.transition_pulses
+        );
         (index, 
          transition.calculate_two_segment_points(),
          transition.event_node_position,
          transition.event_type.clone(),
-         transition.is_dragging_event_node)
+         transition.is_dragging_event_node,
+         transition_color)
     }).collect();
     
     let painter = ui.painter();
     let mut interaction_data = Vec::new();
     
     // First pass: Draw all the arrows (using painter)
-    for (_index, (source_start, source_end, target_start, target_end), _event_pos, _event_type, _is_dragging) in &transitions_data {
-        // Draw the two arrow segments
+    for (_index, (source_start, source_end, target_start, target_end), _event_pos, _event_type, _is_dragging, _color) in &transitions_data {
+        // Draw the two arrow segments in white for visibility
         draw_arrow(&painter, *source_start, *source_end, egui::Color32::WHITE);
         draw_arrow(&painter, *target_start, *target_end, egui::Color32::WHITE);
     }
     
     // Second pass: Draw interactive event nodes (using ui mutably)
-    for (index, (_source_start, _source_end, _target_start, _target_end), event_pos, event_type, is_dragging) in transitions_data {
+    for (index, (_source_start, _source_end, _target_start, _target_end), event_pos, event_type, is_dragging, color) in transitions_data {
         // Draw the interactive event node
         let font_id = egui::FontId::new(12.0, egui::FontFamily::Proportional);
         let response = draw_interactive_pill_label(
@@ -369,7 +382,8 @@ fn render_transition_connections(
             event_pos, 
             &event_type, 
             font_id,
-            is_dragging
+            is_dragging,
+            color
         );
         
         // Store interaction data for later processing
@@ -379,6 +393,17 @@ fn render_transition_connections(
     // Process interactions after rendering
     for (index, response) in interaction_data {
         let transition = &mut persistent_data.visual_transitions[index];
+        
+        // Handle right-click context menu
+        if response.secondary_clicked() {
+            let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
+            commands.trigger(TransitionContextMenuRequested {
+                source_entity: transition.source_entity,
+                target_entity: transition.target_entity,
+                event_type: transition.event_type.clone(),
+                position: pointer_pos,
+            });
+        }
         
         // Handle event node dragging
         if response.drag_started() {

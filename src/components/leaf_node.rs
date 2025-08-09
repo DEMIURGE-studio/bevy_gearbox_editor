@@ -28,14 +28,32 @@ impl LeafNode {
         editing_text: &mut String,
         should_focus: bool,
         first_focus: bool,
+        custom_color: Option<egui::Color32>,
     ) -> NodeResponse {
+        // Determine text color based on background color
+        let text_color = if let Some(bg_color) = custom_color {
+            // If background is gold (active), use black text
+            if bg_color == egui::Color32::from_rgb(255, 215, 0) {
+                egui::Color32::BLACK
+            } else {
+                self.entity_node.text_color
+            }
+        } else {
+            self.entity_node.text_color
+        };
+        
         // Calculate text dimensions
         let main_font_id = self.entity_node.main_font_id();
-        let main_text_galley = ui.fonts(|f| f.layout_no_wrap(text.to_string(), main_font_id, self.entity_node.text_color));
+        let main_text_galley = ui.fonts(|f| f.layout_no_wrap(text.to_string(), main_font_id, text_color));
         
         let subscript_galley = entity_id.map(|id| {
             let subscript_font_id = self.entity_node.subscript_font_id();
-            ui.fonts(|f| f.layout_no_wrap(id.to_string(), subscript_font_id, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180)))
+            let subscript_color = if text_color == egui::Color32::BLACK {
+                egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180) // Semi-transparent black
+            } else {
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180) // Semi-transparent white
+            };
+            ui.fonts(|f| f.layout_no_wrap(id.to_string(), subscript_font_id, subscript_color))
         });
         
         // Calculate total text dimensions
@@ -103,7 +121,8 @@ impl LeafNode {
             is_editing,
             editing_text,
             should_focus,
-            first_focus
+            first_focus,
+            custom_color
         );
         
         // Add the + button for transitions (only if selected and not root)
@@ -164,11 +183,12 @@ impl LeafNode {
         editing_text: &mut String,
         should_focus: bool,
         first_focus: bool,
+        custom_color: Option<egui::Color32>,
     ) {
         if is_editing {
             self.draw_node_editing(ui, rect, subscript_galley, text_gap, editing_text, should_focus, first_focus);
         } else {
-            self.draw_node_normal(ui, rect, main_text_galley, subscript_galley, text_gap);
+            self.draw_node_normal(ui, rect, main_text_galley, subscript_galley, text_gap, custom_color);
         }
     }
 
@@ -180,11 +200,12 @@ impl LeafNode {
         main_text_galley: &egui::Galley,
         subscript_galley: Option<&egui::Galley>,
         text_gap: f32,
+        custom_color: Option<egui::Color32>,
     ) {
         let painter = ui.painter();
         
         // Draw background
-        let bg_color = self.entity_node.current_bg_color();
+        let bg_color = custom_color.unwrap_or_else(|| self.entity_node.current_bg_color());
         painter.rect_filled(
             rect,
             egui::CornerRadius::same(10),

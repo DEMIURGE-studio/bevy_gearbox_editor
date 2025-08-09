@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use bevy_gearbox::{StateMachineRoot, InitialState};
 use bevy_egui::egui;
 
-use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested};
+use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested, TransitionContextMenuRequested, DeleteTransition};
 use crate::components::{NodeType, LeafNode};
 use crate::{StateMachinePersistentData, StateMachineTransientData};
 
@@ -25,6 +25,18 @@ pub fn handle_context_menu_request(
     // Store the context menu request in editor state for rendering
     editor_state.context_menu_entity = Some(event.entity);
     editor_state.context_menu_position = Some(event.position);
+}
+
+/// Observer to handle transition context menu requests
+pub fn handle_transition_context_menu_request(
+    trigger: Trigger<TransitionContextMenuRequested>,
+    mut editor_state: ResMut<EditorState>,
+) {
+    let event = trigger.event();
+    
+    // Store the transition context menu request in editor state for rendering
+    editor_state.transition_context_menu = Some((event.source_entity, event.target_entity, event.event_type.clone()));
+    editor_state.transition_context_menu_position = Some(event.position);
 }
 
 /// Observer to handle node actions triggered from context menus
@@ -166,6 +178,46 @@ pub fn render_context_menu(
             if !menu_rect.contains(pointer_pos) {
                 editor_state.context_menu_entity = None;
                 editor_state.context_menu_position = None;
+            }
+        }
+    }
+    
+    // Render transition context menu if requested
+    if let (Some((source, target, event_type)), Some(position)) = (
+        editor_state.transition_context_menu.clone(),
+        editor_state.transition_context_menu_position
+    ) {
+        let menu_id = egui::Id::new("transition_context_menu").with((source, target));
+        
+        egui::Area::new(menu_id)
+            .fixed_pos(position)
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style())
+                    .show(ui, |ui| {
+                        ui.set_min_width(120.0);
+                        
+                        if ui.button("🗑 Delete Transition").clicked() {
+                            commands.trigger(DeleteTransition {
+                                source_entity: source,
+                                target_entity: target,
+                                event_type: event_type.clone(),
+                            });
+                            editor_state.transition_context_menu = None;
+                            editor_state.transition_context_menu_position = None;
+                            ui.close_menu();
+                        }
+                    });
+            });
+        
+        // Close transition context menu if clicked elsewhere
+        if ctx.input(|i| i.pointer.any_click()) {
+            let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
+            let menu_rect = egui::Rect::from_min_size(position, egui::Vec2::new(120.0, 40.0));
+            
+            if !menu_rect.contains(pointer_pos) {
+                editor_state.transition_context_menu = None;
+                editor_state.transition_context_menu_position = None;
             }
         }
     }

@@ -2,6 +2,7 @@
 
 use bevy::prelude::*;
 use bevy_gearbox::InitialState;
+use bevy_gearbox::active::Active;
 use egui::Pos2;
 use std::collections::HashMap;
 
@@ -174,6 +175,8 @@ pub struct StateMachineTransientData {
     pub transition_creation: TransitionCreationState,
     /// Text editing state for renaming nodes
     pub text_editing: TextEditingState,
+    /// Active transition pulses for visual feedback
+    pub transition_pulses: Vec<TransitionPulse>,
 }
 
 /// Resource that holds the editor's UI/window state
@@ -186,6 +189,10 @@ pub struct EditorState {
     pub context_menu_entity: Option<Entity>,
     /// Position where the context menu should appear
     pub context_menu_position: Option<Pos2>,
+    /// Transition for which a context menu is requested
+    pub transition_context_menu: Option<(Entity, Entity, String)>, // (source, target, event_type)
+    /// Position where the transition context menu should appear
+    pub transition_context_menu_position: Option<Pos2>,
     /// Entity currently being inspected
     pub inspected_entity: Option<Entity>,
     /// Component addition UI state
@@ -249,6 +256,15 @@ pub struct NodeContextMenuRequested {
     pub position: Pos2,
 }
 
+/// Event fired when a context menu is requested for a transition
+#[derive(Event)]
+pub struct TransitionContextMenuRequested {
+    pub source_entity: Entity,
+    pub target_entity: Entity,
+    pub event_type: String,
+    pub position: Pos2,
+}
+
 /// Available actions that can be performed on nodes
 #[derive(Debug, Clone)]
 pub enum NodeAction {
@@ -291,6 +307,139 @@ pub struct CreateTransition {
 pub struct SaveStateMachine {
     pub entity: Entity,
 }
+
+/// Event fired when a transition should be deleted
+#[derive(Event)]
+pub struct DeleteTransition {
+    pub source_entity: Entity,
+    pub target_entity: Entity,
+    pub event_type: String,
+}
+
+/// Data to track transition pulse animation
+#[derive(Clone)]
+pub struct TransitionPulse {
+    pub source_entity: Entity,
+    pub target_entity: Entity,
+    pub timer: Timer,
+}
+
+impl TransitionPulse {
+    pub fn new(source_entity: Entity, target_entity: Entity) -> Self {
+        Self {
+            source_entity,
+            target_entity,
+            timer: Timer::from_seconds(0.4, TimerMode::Once),
+        }
+    }
+    
+    /// Get the current pulse intensity (1.0 at start, 0.0 at end)
+    pub fn intensity(&self) -> f32 {
+        1.0 - self.timer.fraction()
+    }
+}
+
+/// Colors for visual feedback
+pub const ACTIVE_STATE_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 215, 0); // Gold
+pub const NORMAL_NODE_COLOR: egui::Color32 = egui::Color32::from_rgb(60, 60, 60); // Dark grey
+pub const TRANSITION_COLOR: egui::Color32 = egui::Color32::WHITE;
+
+/// Calculate the color for a node based on its state
+pub fn get_node_color(entity: Entity, active_query: &Query<&Active>) -> egui::Color32 {
+    if active_query.contains(entity) {
+        ACTIVE_STATE_COLOR
+    } else {
+        NORMAL_NODE_COLOR
+    }
+}
+
+/// Calculate the color for a transition line/pill based on pulse state
+pub fn get_transition_color(source: Entity, target: Entity, pulses: &[TransitionPulse]) -> egui::Color32 {
+    // Base grey color for transitions (same as normal nodes)
+    let base_transition_color = NORMAL_NODE_COLOR;
+    
+    // Find if there's an active pulse for this transition
+    if let Some(pulse) = pulses.iter().find(|p| p.source_entity == source && p.target_entity == target) {
+        let intensity = pulse.intensity();
+        // Lerp between normal grey and gold based on pulse intensity
+        lerp_color(base_transition_color, ACTIVE_STATE_COLOR, intensity)
+    } else {
+        base_transition_color
+    }
+}
+
+/// Linear interpolation between two colors
+fn lerp_color(from: egui::Color32, to: egui::Color32, t: f32) -> egui::Color32 {
+    let t = t.clamp(0.0, 1.0);
+    egui::Color32::from_rgb(
+        ((from.r() as f32) * (1.0 - t) + (to.r() as f32) * t) as u8,
+        ((from.g() as f32) * (1.0 - t) + (to.g() as f32) * t) as u8,
+        ((from.b() as f32) * (1.0 - t) + (to.b() as f32) * t) as u8,
+    )
+}
+
+/// Draw an interactive pill-shaped label for transition events
+pub fn draw_interactive_pill_label(
+    ui: &mut egui::Ui,
+    position: egui::Pos2,
+    text: &str,
+    font_id: egui::FontId,
+    is_dragging: bool,
+    color: egui::Color32,
+) -> egui::Response {
+    // Calculate text dimensions
+    let galley = ui.fonts(|f| f.layout_no_wrap(text.to_string(), font_id, egui::Color32::WHITE));
+    let text_size = galley.size();
+    
+    // Calculate pill size with padding
+    let padding = egui::Vec2::new(8.0, 4.0);
+    let pill_size = text_size + padding * 2.0;
+    
+    // Create the pill rectangle centered on the position
+    let pill_rect = egui::Rect::from_center_size(position, pill_size);
+    
+    // Handle interaction (including right-click for context menu)
+    let response = ui.allocate_rect(pill_rect, egui::Sense::click_and_drag());
+    
+    // Draw the pill
+    let painter = ui.painter();
+    
+    // Use the provided color, with slight modification for dragging state
+    let bg_color = if is_dragging {
+        // Lighten the color when dragging
+        egui::Color32::from_rgb(
+            (color.r() as f32 * 1.2).min(255.0) as u8,
+            (color.g() as f32 * 1.2).min(255.0) as u8,
+            (color.b() as f32 * 1.2).min(255.0) as u8,
+        )
+    } else {
+        color
+    };
+    
+    painter.rect_filled(
+        pill_rect,
+        egui::CornerRadius::same((pill_size.y / 2.0) as u8),
+        bg_color,
+    );
+    
+    // Draw border
+    painter.rect_stroke(
+        pill_rect,
+        egui::CornerRadius::same((pill_size.y / 2.0) as u8),
+        egui::Stroke::new(1.0, egui::Color32::WHITE),
+        egui::StrokeKind::Outside,
+    );
+    
+    // Draw text
+    let text_pos = pill_rect.center() - text_size * 0.5;
+    painter.galley(text_pos, galley, egui::Color32::WHITE);
+    
+    response
+}
+
+
+
+
 
 /// Item to be rendered in the node editor, with z-order information
 pub struct RenderItem {
@@ -411,51 +560,3 @@ pub fn draw_arrow(painter: &egui::Painter, start: egui::Pos2, end: egui::Pos2, c
     painter.line_segment([end, arrow_head2], stroke);
 }
 
-/// Draw a pill-shaped label with text and return interaction response
-pub fn draw_interactive_pill_label(
-    ui: &mut egui::Ui, 
-    position: egui::Pos2, 
-    text: &str, 
-    font_id: egui::FontId,
-    is_being_dragged: bool
-) -> egui::Response {
-    let galley = ui.fonts(|f| f.layout_no_wrap(text.to_string(), font_id, egui::Color32::WHITE));
-    let text_size = galley.size();
-    
-    let padding = egui::Vec2::new(12.0, 6.0);
-    let pill_size = text_size + padding * 2.0;
-    let pill_rect = egui::Rect::from_center_size(position, pill_size);
-    
-    // Allocate the rectangle for interaction
-    let response = ui.allocate_rect(pill_rect, egui::Sense::click_and_drag());
-    
-    let painter = ui.painter();
-    
-    // Choose colors based on interaction state
-    let (bg_color, border_color) = if response.hovered() || is_being_dragged {
-        (egui::Color32::from_rgb(65, 65, 85), egui::Color32::from_rgb(100, 100, 110))
-    } else {
-        (egui::Color32::from_rgb(45, 45, 55), egui::Color32::from_rgb(80, 80, 90))
-    };
-    
-    // Draw pill background (same as node background)
-    painter.rect_filled(
-        pill_rect,
-        10.0, // Fully rounded ends
-        bg_color,
-    );
-    
-    // Draw pill border (same as node border)
-    painter.rect_stroke(
-        pill_rect,
-        egui::CornerRadius::same((pill_size.y / 2.0) as u8),
-        egui::Stroke::new(1.0, border_color),
-        egui::StrokeKind::Outside,
-    );
-    
-    // Draw text
-    let text_pos = position - text_size / 2.0;
-    painter.galley(text_pos, galley, egui::Color32::WHITE);
-    
-    response
-}
