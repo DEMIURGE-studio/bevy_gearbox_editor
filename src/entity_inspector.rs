@@ -195,6 +195,11 @@ pub fn entity_inspector_system(world: &mut World) {
                     
                     ui.separator();
                     
+                    // Component removal UI
+                    render_component_removal_ui(world, inspected_entity, ui);
+                    
+                    ui.separator();
+                    
                     // Component addition UI
                     render_component_addition_ui(world, inspected_entity, ui);
                 } else {
@@ -359,6 +364,114 @@ fn collect_matching_components(
             ComponentNode::Namespace(nested_components) => {
                 collect_matching_components(nested_components, search_lower, ui, world, entity, state, found_any);
             }
+        }
+    }
+}
+
+/// Render the component removal UI
+fn render_component_removal_ui(world: &mut World, entity: Entity, ui: &mut egui::Ui) {
+    ui.heading("Remove Components");
+    
+    // Get all components on the entity
+    let components = get_entity_components(world, entity);
+    
+    if components.is_empty() {
+        ui.label("No removable components found.");
+        return;
+    }
+    
+    ui.label("Click to remove components:");
+    
+    // Create a list of components to remove (we'll collect them first to avoid borrowing issues)
+    let mut components_to_remove = Vec::new();
+    
+    for (component_name, type_id) in &components {
+        // Skip essential components that shouldn't be removed
+        if is_essential_component(component_name) {
+            continue;
+        }
+        
+        ui.horizontal(|ui| {
+            ui.label(component_name);
+            if ui.button("🗑 Remove").clicked() {
+                components_to_remove.push(*type_id);
+                info!("🗑️ Queued component {} for removal from entity {:?}", component_name, entity);
+            }
+        });
+    }
+    
+    // Remove the queued components
+    for type_id in components_to_remove {
+        remove_component_by_type_id(world, entity, type_id);
+    }
+}
+
+/// Get all components on an entity with their type information
+fn get_entity_components(world: &World, entity: Entity) -> Vec<(String, std::any::TypeId)> {
+    let mut components = Vec::new();
+    
+    let type_registry = world.resource::<AppTypeRegistry>();
+    let registry = type_registry.read();
+    
+    // Iterate through all registered types that have ReflectComponent
+    for registration in registry.iter() {
+        if let Some(reflect_component) = registration.data::<ReflectComponent>() {
+            // Check if this entity has this component
+            if reflect_component.reflect(world.entity(entity)).is_some() {
+                let type_name = registration.type_info().type_path_table().short_path()
+                    .to_string();
+                components.push((type_name, registration.type_id()));
+            }
+        }
+    }
+    
+    // Sort components alphabetically for consistent display
+    components.sort_by(|a, b| a.0.cmp(&b.0));
+    components
+}
+
+/// Check if a component is essential and shouldn't be removed
+fn is_essential_component(component_name: &str) -> bool {
+    match component_name {
+        // Core Bevy components that are essential
+        "Entity" | "Transform" | "GlobalTransform" => true,
+        // Hierarchy components
+        "Parent" | "Children" | "ChildOf" => true,
+        // Essential for our editor
+        "Name" => true,
+        // State machine components that define structure
+        "StateMachineRoot" | "StateMachinePersistentData" | "StateMachineTransientData" => true,
+        _ => false,
+    }
+}
+
+/// Remove a component from an entity using its TypeId
+fn remove_component_by_type_id(world: &mut World, entity: Entity, type_id: std::any::TypeId) {
+    // First, get the reflection data we need
+    let (reflect_component, component_name) = {
+        let type_registry = world.resource::<AppTypeRegistry>();
+        let registry = type_registry.read();
+        
+        if let Some(registration) = registry.get(type_id) {
+            if let Some(reflect_component) = registration.data::<ReflectComponent>() {
+                let component_name = registration.type_info().type_path_table().short_path().to_string();
+                (Some(reflect_component.clone()), component_name)
+            } else {
+                return;
+            }
+        } else {
+            return;
+        }
+    };
+    
+    // Now we can safely mutate the world
+    if let Some(reflect_component) = reflect_component {
+        // Check if the component exists before trying to remove it
+        if reflect_component.reflect(world.entity(entity)).is_some() {
+            reflect_component.remove(&mut world.entity_mut(entity));
+            info!("✅ Removed component {} from entity {:?}", component_name, entity);
+        } else {
+            warn!("⚠️ Component {} not found on entity {:?}", component_name, entity);
         }
     }
 }
