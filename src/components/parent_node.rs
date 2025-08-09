@@ -221,7 +221,8 @@ impl ParentNode {
         custom_color: Option<egui::Color32>,
     ) {
         let painter = ui.painter();
-        let bg_color = custom_color.unwrap_or_else(|| self.entity_node.current_bg_color());
+        // Main container background always uses normal color
+        let bg_color = self.entity_node.current_bg_color();
         
         // Draw main container background
         painter.rect_filled(
@@ -238,13 +239,17 @@ impl ParentNode {
             egui::StrokeKind::Outside,
         );
         
-        // Draw title bar background (slightly darker)
-        let title_bg_color = Color32::from_rgba_unmultiplied(
-            bg_color.r().saturating_sub(10),
-            bg_color.g().saturating_sub(10),
-            bg_color.b().saturating_sub(10),
-            bg_color.a(),
-        );
+        // Title bar background: use custom_color (gold) if active, otherwise slightly darker normal
+        let title_bg_color = if let Some(active_color) = custom_color {
+            active_color
+        } else {
+            Color32::from_rgba_unmultiplied(
+                bg_color.r().saturating_sub(10),
+                bg_color.g().saturating_sub(10),
+                bg_color.b().saturating_sub(10),
+                bg_color.a(),
+            )
+        };
         
         painter.rect_filled(
             title_rect,
@@ -267,14 +272,10 @@ impl ParentNode {
             egui::Stroke::new(1.0, self.entity_node.border_color),
         );
         
-        // Determine text color based on background color
-        let text_color = if let Some(bg_color) = custom_color {
-            // If background is gold (active), use black text
-            if bg_color == egui::Color32::from_rgb(255, 215, 0) {
-                egui::Color32::BLACK
-            } else {
-                self.entity_node.text_color
-            }
+        // Determine text color based on title bar background color
+        let text_color = if title_bg_color == egui::Color32::from_rgb(255, 215, 0) {
+            // If title bar background is gold (active), use black text
+            egui::Color32::BLACK
         } else {
             self.entity_node.text_color
         };

@@ -301,6 +301,7 @@ fn create_transition_listener_component(
     let connection = Connection {
         target: target_entity,
         guards: None,
+        internal: false,
     };
     
     // Find the full TransitionListener type path and get reflection data

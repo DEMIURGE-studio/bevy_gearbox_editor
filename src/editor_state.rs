@@ -195,8 +195,24 @@ pub struct EditorState {
     pub transition_context_menu_position: Option<Pos2>,
     /// Entity currently being inspected
     pub inspected_entity: Option<Entity>,
+    /// Current inspector tab
+    pub inspector_tab: InspectorTab,
     /// Component addition UI state
     pub component_addition: ComponentAdditionState,
+}
+
+/// Inspector tabs
+#[derive(Debug, Clone, PartialEq)]
+pub enum InspectorTab {
+    Inspect,
+    Remove,
+    Add,
+}
+
+impl Default for InspectorTab {
+    fn default() -> Self {
+        Self::Inspect
+    }
 }
 
 /// State for the component addition UI

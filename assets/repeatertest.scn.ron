@@ -54,6 +54,7 @@
           connection: (
             target: 4294967329,
             guards: None,
+            internal: false,
           ),
         ),
       },
@@ -66,6 +67,7 @@
           connection: (
             target: 4294967328,
             guards: None,
+            internal: false,
           ),
         ),
         "repeater::Repeater": (

@@ -91,6 +91,8 @@ fn input_system(
 /// The core logic for the repeater. Ticks the timer and fires "projectiles".
 fn repeater_system(
     mut repeater_query: Query<(Entity, &mut Repeater), With<Active>>,
+    child_of_query: Query<&ChildOf>,
+    root_query: Query<&StateMachineRoot>,
     time: Res<Time>,
     mut commands: Commands,
 ) {
@@ -103,11 +105,13 @@ fn repeater_system(
                 repeater.remaining -= 1;
             }
 
+            let root_entity = child_of_query.iter_ancestors(entity).find(|parent| root_query.contains(*parent)).unwrap_or(entity);
+
             if repeater.remaining == 0 {
                 // The repeater is done. Fire the `OnComplete` event on the `Repeating`
                 // state entity. The `TransitionListener` on that entity will handle
                 // transitioning back to the `Ready` state.
-                commands.trigger_targets(OnComplete, entity);
+                commands.trigger_targets(OnComplete, root_entity);
             }
         }
     }

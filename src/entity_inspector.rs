@@ -14,7 +14,7 @@ use bevy_inspector_egui::{
 };
 
 
-use crate::editor_state::{EditorState, EditorWindow, get_entity_name_from_world};
+use crate::editor_state::{EditorState, EditorWindow, InspectorTab, get_entity_name_from_world};
 
 /// Helper function to try adding components via reflection
 fn try_add_component_via_reflection(world: &mut World, entity: Entity, component_type_name: &str) -> bool {
@@ -189,19 +189,8 @@ pub fn entity_inspector_system(world: &mut World) {
             .default_width(300.0)
             .open(&mut keep_open)
             .show(ctx.get_mut(), |ui| {
-                // Use bevy-inspector-egui to render the entity
                 if world.entities().contains(inspected_entity) {
-                    ui_for_entity(world, inspected_entity, ui);
-                    
-                    ui.separator();
-                    
-                    // Component removal UI
-                    render_component_removal_ui(world, inspected_entity, ui);
-                    
-                    ui.separator();
-                    
-                    // Component addition UI
-                    render_component_addition_ui(world, inspected_entity, ui);
+                    render_inspector_tabs(world, inspected_entity, ui);
                 } else {
                     ui.label("Entity no longer exists");
                 }
@@ -216,9 +205,47 @@ pub fn entity_inspector_system(world: &mut World) {
     }
 }
 
+/// Render the inspector tabs interface
+fn render_inspector_tabs(world: &mut World, entity: Entity, ui: &mut egui::Ui) {
+    // We need to temporarily extract the editor state to avoid borrowing issues
+    let mut editor_state = world.remove_resource::<EditorState>().unwrap_or_default();
+    
+    // Tab buttons at the top
+    ui.horizontal(|ui| {
+        if ui.selectable_label(editor_state.inspector_tab == InspectorTab::Inspect, "🔍 Inspect").clicked() {
+            editor_state.inspector_tab = InspectorTab::Inspect;
+        }
+        if ui.selectable_label(editor_state.inspector_tab == InspectorTab::Remove, "🗑 Remove").clicked() {
+            editor_state.inspector_tab = InspectorTab::Remove;
+        }
+        if ui.selectable_label(editor_state.inspector_tab == InspectorTab::Add, "➕ Add").clicked() {
+            editor_state.inspector_tab = InspectorTab::Add;
+        }
+    });
+    
+    ui.separator();
+    
+    // Put the editor state back before rendering tab content
+    world.insert_resource(editor_state);
+    
+    // Render the content based on the selected tab
+    let current_tab = world.resource::<EditorState>().inspector_tab.clone();
+    match current_tab {
+        InspectorTab::Inspect => {
+            // Use bevy-inspector-egui to render the entity
+            ui_for_entity(world, entity, ui);
+        }
+        InspectorTab::Remove => {
+            render_component_removal_ui(world, entity, ui);
+        }
+        InspectorTab::Add => {
+            render_component_addition_ui(world, entity, ui);
+        }
+    }
+}
+
 /// Render the component addition UI
 fn render_component_addition_ui(world: &mut World, entity: Entity, ui: &mut egui::Ui) {
-    ui.heading("Add Component");
     
     // We need to temporarily extract the editor state to avoid borrowing issues
     let mut editor_state = world.remove_resource::<EditorState>().unwrap_or_default();
@@ -370,7 +397,6 @@ fn collect_matching_components(
 
 /// Render the component removal UI
 fn render_component_removal_ui(world: &mut World, entity: Entity, ui: &mut egui::Ui) {
-    ui.heading("Remove Components");
     
     // Get all components on the entity
     let components = get_entity_components(world, entity);
@@ -379,8 +405,6 @@ fn render_component_removal_ui(world: &mut World, entity: Entity, ui: &mut egui:
         ui.label("No removable components found.");
         return;
     }
-    
-    ui.label("Click to remove components:");
     
     // Create a list of components to remove (we'll collect them first to avoid borrowing issues)
     let mut components_to_remove = Vec::new();
