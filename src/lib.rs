@@ -73,7 +73,8 @@ impl Plugin for GearboxEditorPlugin {
             .add_observer(handle_save_state_machine)
             .add_observer(reflectable::on_add_reflectable_state_machine)
             .add_observer(handle_transition_pulse)
-            .add_observer(handle_delete_transition);
+            .add_observer(handle_delete_transition)
+            .add_observer(handle_delete_node);
     }
 }
 
@@ -510,6 +511,191 @@ fn update_transition_pulses(
         
         // Remove finished pulses
         transient_data.transition_pulses.retain(|pulse| !pulse.timer.finished());
+    }
+}
+
+/// Observer to handle node deletion with all edge cases
+fn handle_delete_node(
+    trigger: Trigger<DeleteNode>,
+    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
+    child_of_query: Query<&ChildOf>,
+    children_query: Query<&Children>,
+    initial_state_query: Query<&InitialState>,
+    state_machine_root_query: Query<&StateMachineRoot>,
+    mut commands: Commands,
+) {
+    let event = trigger.event();
+    let entity_to_delete = event.entity;
+    
+    info!("🗑️ Starting deletion process for entity {:?}", entity_to_delete);
+    
+    // Find the state machine root that contains this entity
+    let state_machine_root = bevy_gearbox::find_state_machine_root(
+        entity_to_delete, 
+        &child_of_query, 
+        &state_machine_root_query
+    );
+    
+    let Some(root_entity) = state_machine_root else {
+        warn!("⚠️ Could not find state machine root for entity {:?}", entity_to_delete);
+        return;
+    };
+    
+    // Don't allow deleting the root state machine itself
+    if entity_to_delete == root_entity {
+        warn!("⚠️ Cannot delete the root state machine entity {:?}", entity_to_delete);
+        return;
+    }
+    
+    let Ok(mut persistent_data) = state_machines.get_mut(root_entity) else {
+        warn!("⚠️ Could not find persistent data for state machine root {:?}", root_entity);
+        return;
+    };
+    
+    // Collect all entities to be deleted (the entity and all its descendants)
+    let mut entities_to_delete = Vec::new();
+    collect_entities_recursively(entity_to_delete, &children_query, &mut entities_to_delete);
+    
+    info!("📋 Will delete {} entities: {:?}", entities_to_delete.len(), entities_to_delete);
+    
+    // Step 1: Remove all transitions involving any of the entities to be deleted
+    remove_transitions_for_entities(&entities_to_delete, &mut persistent_data, &mut commands);
+    
+    // Step 2: Handle parent state changes if needed
+    if let Some(child_of) = child_of_query.get(entity_to_delete).ok() {
+        let parent_entity = child_of.0;
+        handle_parent_state_changes(parent_entity, entity_to_delete, &entities_to_delete, 
+                                   &children_query, &initial_state_query, &mut commands);
+    }
+    
+    // Step 3: Remove visual data for all deleted entities
+    for entity in &entities_to_delete {
+        persistent_data.nodes.remove(entity);
+        info!("🧹 Removed visual data for entity {:?}", entity);
+    }
+    
+    // Step 4: Actually delete the entities
+    for entity in entities_to_delete {
+        commands.entity(entity).despawn();
+        info!("💀 Despawned entity {:?}", entity);
+    }
+    
+    info!("✅ Node deletion completed successfully");
+}
+
+/// Recursively collect all entities in a hierarchy
+fn collect_entities_recursively(
+    entity: Entity,
+    children_query: &Query<&Children>,
+    entities: &mut Vec<Entity>,
+) {
+    entities.push(entity);
+    
+    if let Ok(children) = children_query.get(entity) {
+        for &child in children {
+            collect_entities_recursively(child, children_query, entities);
+        }
+    }
+}
+
+/// Remove all transitions (both incoming and outgoing) for the given entities
+fn remove_transitions_for_entities(
+    entities_to_delete: &[Entity],
+    persistent_data: &mut StateMachinePersistentData,
+    commands: &mut Commands,
+) {
+    // Collect transitions that need to be deleted (involving any of the entities to be deleted)
+    let transitions_to_delete: Vec<_> = persistent_data.visual_transitions
+        .iter()
+        .filter(|transition| {
+            entities_to_delete.contains(&transition.source_entity) || 
+            entities_to_delete.contains(&transition.target_entity)
+        })
+        .cloned()
+        .collect();
+    
+    info!("🔗 Found {} transitions to delete", transitions_to_delete.len());
+    
+    // Use our existing DeleteTransition event system to handle component removal
+    for transition in transitions_to_delete {
+        info!("🔗 Deleting transition: {:?} -> {:?} ({})", 
+              transition.source_entity, transition.target_entity, transition.event_type);
+        
+        // Only remove the component if the source entity is not being deleted
+        // (if it's being deleted, the component will be removed automatically)
+        if !entities_to_delete.contains(&transition.source_entity) {
+            commands.trigger(DeleteTransition {
+                source_entity: transition.source_entity,
+                target_entity: transition.target_entity,
+                event_type: transition.event_type.clone(),
+            });
+        } else {
+            // Just remove the visual transition since the entity (and its components) will be deleted
+            info!("🔗 Source entity {:?} will be deleted, component removal handled automatically", 
+                  transition.source_entity);
+        }
+    }
+    
+    // Remove visual transitions involving deleted entities
+    let initial_count = persistent_data.visual_transitions.len();
+    persistent_data.visual_transitions.retain(|transition| {
+        let should_keep = !entities_to_delete.contains(&transition.source_entity) && 
+                         !entities_to_delete.contains(&transition.target_entity);
+        should_keep
+    });
+    let final_count = persistent_data.visual_transitions.len();
+    
+    if initial_count > final_count {
+        info!("🧹 Removed {} visual transitions from persistent data", initial_count - final_count);
+    }
+}
+
+
+
+/// Handle changes to parent states when children are deleted
+fn handle_parent_state_changes(
+    parent_entity: Entity,
+    _deleted_entity: Entity,
+    all_deleted_entities: &[Entity],
+    children_query: &Query<&Children>,
+    initial_state_query: &Query<&InitialState>,
+    commands: &mut Commands,
+) {
+    info!("👨‍👩‍👧‍👦 Handling parent state changes for {:?}", parent_entity);
+    
+    // Get remaining children after deletion
+    let remaining_children: Vec<Entity> = if let Ok(children) = children_query.get(parent_entity) {
+        let mut remaining = Vec::new();
+        for &child in children {
+            if !all_deleted_entities.contains(&child) {
+                remaining.push(child);
+            }
+        }
+        remaining
+    } else {
+        Vec::new()
+    };
+    
+    info!("👶 Parent {:?} will have {} remaining children", parent_entity, remaining_children.len());
+    
+    // Case 1: No children left - convert parent to leaf by removing InitialState
+    if remaining_children.is_empty() {
+        commands.entity(parent_entity).remove::<InitialState>();
+        info!("🍃 Converted parent {:?} to leaf (no children remaining)", parent_entity);
+        return;
+    }
+    
+    // Case 2: Check if we deleted the initial state
+    let current_initial_state = initial_state_query.get(parent_entity).ok().map(|is| is.0);
+    
+    if let Some(initial_state_entity) = current_initial_state {
+        if all_deleted_entities.contains(&initial_state_entity) {
+            // The initial state was deleted, assign a new one
+            let new_initial_state = remaining_children[0]; // Pick the first remaining child
+            commands.entity(parent_entity).insert(InitialState(new_initial_state));
+            info!("🎯 Reassigned initial state for parent {:?}: {:?} -> {:?}", 
+                  parent_entity, initial_state_entity, new_initial_state);
+        }
     }
 }
 

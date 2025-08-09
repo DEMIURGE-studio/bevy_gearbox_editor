@@ -272,6 +272,7 @@ pub enum NodeAction {
     AddChild,
     Rename,
     SetAsInitialState,
+    Delete,
 }
 
 /// Event fired when a node action is triggered
@@ -314,6 +315,12 @@ pub struct DeleteTransition {
     pub source_entity: Entity,
     pub target_entity: Entity,
     pub event_type: String,
+}
+
+/// Event fired when a node should be deleted
+#[derive(Event)]
+pub struct DeleteNode {
+    pub entity: Entity,
 }
 
 /// Data to track transition pulse animation
@@ -559,4 +566,3 @@ pub fn draw_arrow(painter: &egui::Painter, start: egui::Pos2, end: egui::Pos2, c
     painter.line_segment([end, arrow_head1], stroke);
     painter.line_segment([end, arrow_head2], stroke);
 }
-

@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use bevy_gearbox::{StateMachineRoot, InitialState};
 use bevy_egui::egui;
 
-use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested, TransitionContextMenuRequested, DeleteTransition};
+use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested, TransitionContextMenuRequested, DeleteTransition, DeleteNode};
 use crate::components::{NodeType, LeafNode};
 use crate::{StateMachinePersistentData, StateMachineTransientData};
 
@@ -106,6 +106,12 @@ pub fn handle_node_action(
                 }
             });
         }
+        NodeAction::Delete => {
+            // Trigger the delete node event
+            commands.trigger(DeleteNode {
+                entity: event.entity,
+            });
+        }
     }
 }
 
@@ -162,6 +168,16 @@ pub fn render_context_menu(
                             commands.trigger(NodeActionTriggered {
                                 entity,
                                 action: NodeAction::SetAsInitialState,
+                            });
+                            editor_state.context_menu_entity = None;
+                            editor_state.context_menu_position = None;
+                            ui.close_menu();
+                        }
+                        
+                        if ui.button("🗑 Delete Node").clicked() {
+                            commands.trigger(NodeActionTriggered {
+                                entity,
+                                action: NodeAction::Delete,
                             });
                             editor_state.context_menu_entity = None;
                             editor_state.context_menu_position = None;
