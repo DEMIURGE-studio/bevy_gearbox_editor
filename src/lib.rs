@@ -698,4 +698,3 @@ fn handle_parent_state_changes(
         }
     }
 }
-
