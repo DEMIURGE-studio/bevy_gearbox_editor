@@ -7,6 +7,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContext, EguiPlugin};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use bevy_gearbox::{StateMachineRoot, InitialState};
+use bevy_gearbox::transitions::{EdgeTarget, Source, TransitionKind};
 use bevy_ecs::schedule::ScheduleLabel;
 
 // Module declarations
@@ -192,8 +193,8 @@ fn handle_transition_creation_request(
     // Start the transition creation process
     transient_data.transition_creation.start_transition(event.source_entity);
     
-    // Discover available event types for TransitionListener
-    discover_transition_listener_event_types(&mut transient_data.transition_creation, &type_registry);
+    // Discover available event types for TransitionEdgeListener
+    discover_transition_edge_listener_event_types(&mut transient_data.transition_creation, &type_registry);
 }
 
 /// Observer to handle transition creation with selected event type
@@ -220,12 +221,7 @@ fn handle_create_transition(
     let event_type = event.event_type.clone();
     
     commands.queue(move |world: &mut World| {
-        if let Err(e) = create_transition_listener_component(
-            world,
-            source,
-            target,
-            &event_type,
-        ) {
+        if let Err(e) = create_transition_edge_entity(world, source, target, &event_type) {
             warn!("Failed to create transition: {}", e);
         }
     });
@@ -257,8 +253,8 @@ fn handle_create_transition(
     }
 }
 
-/// Discover available TransitionListener event types from the type registry
-fn discover_transition_listener_event_types(
+/// Discover available TransitionEdgeListener event types from the type registry
+fn discover_transition_edge_listener_event_types(
     transition_state: &mut TransitionCreationState,
     type_registry: &AppTypeRegistry,
 ) {
@@ -268,10 +264,10 @@ fn discover_transition_listener_event_types(
     for registration in registry.iter() {
         let type_path = registration.type_info().type_path();
         
-        // Look for TransitionListener<EventType> patterns
-        if let Some(start) = type_path.find("TransitionListener<") {
+        // Look for TransitionEdgeListener<EventType> patterns
+        if let Some(start) = type_path.find("TransitionEdgeListener<") {
             if let Some(end) = type_path[start..].find('>') {
-                let event_type = &type_path[start + 19..start + end]; // 19 = len("TransitionListener<")
+                let event_type = &type_path[start + 24..start + end]; // 24 = len("TransitionEdgeListener<")
                 
                 // Skip generic parameters and extract just the event type name
                 if let Some(last_part) = event_type.split("::").last() {
@@ -288,22 +284,13 @@ fn discover_transition_listener_event_types(
     transition_state.available_event_types = event_types;
 }
 
-/// Create a TransitionListener component using reflection (adapted from your old code)
-fn create_transition_listener_component(
+/// Create a transition edge entity using reflection (marker component on the edge)
+fn create_transition_edge_entity(
     world: &mut World,
     source_entity: Entity,
     target_entity: Entity,
     event_type: &str,
 ) -> Result<(), String> {
-    use bevy_gearbox::Connection;
-    
-    // Create the connection
-    let connection = Connection {
-        target: target_entity,
-        guards: None,
-        internal: false,
-    };
-    
     // Find the full TransitionListener type path and get reflection data
     let (type_path, reflect_component) = {
         let type_registry = world.resource::<AppTypeRegistry>();
@@ -312,64 +299,36 @@ fn create_transition_listener_component(
         let mut transition_listener_type_path = None;
         for registration in registry.iter() {
             let type_path = registration.type_info().type_path();
-            if type_path.contains("TransitionListener<") && type_path.contains(event_type) {
+            if type_path.contains("TransitionEdgeListener<") && type_path.contains(event_type) {
                 transition_listener_type_path = Some(type_path.to_string());
                 break;
             }
         }
         
         let Some(type_path) = transition_listener_type_path else {
-            return Err(format!("TransitionListener<{}> not found in type registry", event_type));
+            return Err(format!("TransitionEdgeListener<{}> not found in type registry", event_type));
         };
         
         // Get reflection data
-        let Some(registration) = registry.get_with_type_path(&type_path) else {
-            return Err(format!("Type registration not found for {}", type_path));
-        };
-        
-        let Some(reflect_component) = registration.data::<ReflectComponent>() else {
-            return Err(format!("ReflectComponent not found for {}", type_path));
-        };
-        
+        let Some(registration) = registry.get_with_type_path(&type_path) else { return Err(format!("Type registration not found for {}", type_path)); };
+        let Some(reflect_component) = registration.data::<ReflectComponent>() else { return Err(format!("ReflectComponent not found for {}", type_path)); };
         (type_path, reflect_component.clone())
     };
-    
-    // Create the component instance
-    let dynamic_struct = {
-        let type_registry = world.resource::<AppTypeRegistry>();
-        let registry = type_registry.read();
-        
-        let Some(registration) = registry.get_with_type_path(&type_path) else {
-            return Err(format!("Type registration not found for {}", type_path));
-        };
-        
-        let type_info = registration.type_info();
-        if let bevy::reflect::TypeInfo::Struct(_struct_info) = type_info {
-            let mut dynamic_struct = bevy::reflect::DynamicStruct::default();
-            dynamic_struct.set_represented_type(Some(type_info));
-            
-            // Add the connection field
-            dynamic_struct.insert_boxed("connection", connection.to_dynamic());
-            
-            dynamic_struct
-        } else {
-            return Err(format!("TransitionListener is not a struct type: {}", type_path));
-        }
-    };
-    
-    // Insert the component (separate scope to avoid borrowing conflicts)
+    // Spawn edge entity
+    let edge = world.spawn((Source(source_entity), EdgeTarget(target_entity), TransitionKind::External)).id();
+
+    // Attach the event-specific listener via reflection to the edge entity (empty struct)
     {
         let type_registry = world.resource::<AppTypeRegistry>().clone();
         let registry = type_registry.read();
-        let mut entity_mut = world.entity_mut(source_entity);
-        
-        reflect_component.insert(
-            &mut entity_mut,
-            dynamic_struct.as_partial_reflect(),
-            &registry,
-        );
+        let Some(registration) = registry.get_with_type_path(&type_path) else { return Err(format!("Type registration not found for {}", type_path)); };
+        let type_info = registration.type_info();
+        let mut dynamic_struct = bevy::reflect::DynamicStruct::default();
+        if let bevy::reflect::TypeInfo::Struct(_) = type_info { dynamic_struct.set_represented_type(Some(type_info)); } else { return Err(format!("TransitionEdgeListener is not a struct type: {}", type_path)); }
+        let mut entity_mut = world.entity_mut(edge);
+        reflect_component.insert(&mut entity_mut, dynamic_struct.as_partial_reflect(), &registry);
     }
-    
+
     Ok(())
 }
 
@@ -412,68 +371,75 @@ fn handle_save_state_machine(
 fn handle_delete_transition(
     trigger: Trigger<DeleteTransition>,
     mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
-    child_of_query: Query<&ChildOf>,
-    state_machine_root_query: Query<&StateMachineRoot>,
+    child_of_query: Query<&bevy_gearbox::StateChildOf>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
     
     // Find the state machine root that contains the source entity
-    let state_machine_root = bevy_gearbox::find_state_machine_root(
-        event.source_entity, 
-        &child_of_query, 
-        &state_machine_root_query
-    );
+    let root = child_of_query.root_ancestor(event.source_entity);
     
-    if let Some(root_entity) = state_machine_root {
-        // Remove the visual transition from persistent data
-        if let Ok(mut persistent_data) = state_machines.get_mut(root_entity) {
-            let initial_count = persistent_data.visual_transitions.len();
-            persistent_data.visual_transitions.retain(|transition| {
-                !(transition.source_entity == event.source_entity &&
-                  transition.target_entity == event.target_entity &&
-                  transition.event_type == event.event_type)
-            });
-            let final_count = persistent_data.visual_transitions.len();
-            
-            if initial_count > final_count {
-                info!("✅ Removed visual transition from {:?} to {:?} ({}) - {} transitions remaining", 
-                      event.source_entity, event.target_entity, event.event_type, final_count);
-            } else {
-                warn!("⚠️ No matching visual transition found to remove: {:?} -> {:?} ({})", 
-                      event.source_entity, event.target_entity, event.event_type);
-            }
+    
+    // Remove the visual transition from persistent data
+    if let Ok(mut persistent_data) = state_machines.get_mut(root) {
+        let initial_count = persistent_data.visual_transitions.len();
+        persistent_data.visual_transitions.retain(|transition| {
+            !(transition.source_entity == event.source_entity &&
+                transition.target_entity == event.target_entity &&
+                transition.event_type == event.event_type)
+        });
+        let final_count = persistent_data.visual_transitions.len();
+        
+        if initial_count > final_count {
+            info!("✅ Removed visual transition from {:?} to {:?} ({}) - {} transitions remaining", 
+                    event.source_entity, event.target_entity, event.event_type, final_count);
         } else {
-            warn!("⚠️ Could not find state machine persistent data for root {:?}", root_entity);
+            warn!("⚠️ No matching visual transition found to remove: {:?} -> {:?} ({})", 
+                    event.source_entity, event.target_entity, event.event_type);
         }
     } else {
-        warn!("⚠️ Could not find state machine root for entity {:?}", event.source_entity);
+        warn!("⚠️ Could not find state machine persistent data for root {:?}", root);
     }
     
-    // Remove the TransitionListener component from the source entity
+    // Remove the corresponding edge entity and update Transitions on the source
     let source_entity = event.source_entity;
+    let target_entity = event.target_entity;
     let event_type = event.event_type.clone();
-    
     commands.queue(move |world: &mut World| {
-        // We need to use reflection to remove the correct TransitionListener<E> component
         let registry = world.resource::<AppTypeRegistry>().clone();
         let registry = registry.read();
-        
-        // Find all registered TransitionListener types
+        // Find the TransitionEdgeListener<Event> type registration
+        let mut reflect_listener: Option<bevy::ecs::reflect::ReflectComponent> = None;
         for registration in registry.iter() {
             let type_info = registration.type_info();
             let type_name = type_info.type_path_table().short_path();
-            if type_name.starts_with("TransitionListener<") && type_name.contains(&event_type) {
-                if let Some(reflect_component) = registration.data::<ReflectComponent>() {
-                    // Check if this entity has this component
-                    if reflect_component.reflect(world.entity(source_entity)).is_some() {
-                        // Remove the component
-                        reflect_component.remove(&mut world.entity_mut(source_entity));
-                        info!("✅ Removed TransitionListener<{}> from entity {:?}", event_type, source_entity);
-                        break;
-                    }
+            if type_name.starts_with("TransitionEdgeListener<") && type_name.contains(&event_type) {
+                reflect_listener = registration.data::<ReflectComponent>().cloned();
+                break;
+            }
+        }
+        if reflect_listener.is_none() {
+            warn!("Could not resolve TransitionEdgeListener<{}> for deletion", event_type);
+            return;
+        }
+        let reflect_listener = reflect_listener.unwrap();
+
+        // Search for an edge with Source, EdgeTarget, and that listener
+        let mut to_remove: Option<Entity> = None;
+        let mut q = world.query::<(Entity, &Source, &EdgeTarget)>();
+        for (edge, src, tgt) in q.iter(world) {
+            if src.0 == source_entity && tgt.0 == target_entity {
+                if reflect_listener.reflect(world.entity(edge)).is_some() {
+                    to_remove = Some(edge);
+                    break;
                 }
             }
+        }
+        if let Some(edge) = to_remove {
+            world.entity_mut(edge).despawn();
+            info!("✅ Removed edge {:?} for {:?} -> {:?} ({})", edge, source_entity, target_entity, event_type);
+        } else {
+            warn!("⚠️ No matching edge found to remove: {:?} -> {:?} ({})", source_entity, target_entity, event_type);
         }
     });
 }
@@ -482,17 +448,16 @@ fn handle_delete_transition(
 fn handle_transition_pulse(
     trigger: Trigger<bevy_gearbox::Transition>,
     mut state_machines: Query<&mut StateMachineTransientData, With<StateMachineRoot>>,
-    _child_of_query: Query<&ChildOf>,
+    edge_target_query: Query<&EdgeTarget>,
 ) {
     let event = trigger.event();
     let target_entity = trigger.target(); // This is the state machine root
     
     // Add pulse to the state machine's transient data
     if let Ok(mut transient_data) = state_machines.get_mut(target_entity) {
-        transient_data.transition_pulses.push(TransitionPulse::new(
-            event.source, 
-            event.connection.target
-        ));
+        if let Ok(edge_target) = edge_target_query.get(event.edge) {
+            transient_data.transition_pulses.push(TransitionPulse::new(event.source, edge_target.0));
+        }
     }
 }
 
@@ -517,34 +482,25 @@ fn handle_delete_node(
     trigger: Trigger<DeleteNode>,
     mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
     child_of_query: Query<&ChildOf>,
+    state_child_of_query: Query<&bevy_gearbox::StateChildOf>,
     children_query: Query<&Children>,
     initial_state_query: Query<&InitialState>,
-    state_machine_root_query: Query<&StateMachineRoot>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
     let entity_to_delete = event.entity;
     
     // Find the state machine root that contains this entity
-    let state_machine_root = bevy_gearbox::find_state_machine_root(
-        entity_to_delete, 
-        &child_of_query, 
-        &state_machine_root_query
-    );
-    
-    let Some(root_entity) = state_machine_root else {
-        warn!("⚠️ Could not find state machine root for entity {:?}", entity_to_delete);
-        return;
-    };
+    let root = state_child_of_query.root_ancestor(entity_to_delete);
     
     // Don't allow deleting the root state machine itself
-    if entity_to_delete == root_entity {
+    if entity_to_delete == root {
         warn!("⚠️ Cannot delete the root state machine entity {:?}", entity_to_delete);
         return;
     }
     
-    let Ok(mut persistent_data) = state_machines.get_mut(root_entity) else {
-        warn!("⚠️ Could not find persistent data for state machine root {:?}", root_entity);
+    let Ok(mut persistent_data) = state_machines.get_mut(root) else {
+        warn!("⚠️ Could not find persistent data for state machine root {:?}", root);
         return;
     };
     

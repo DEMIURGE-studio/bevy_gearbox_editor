@@ -77,7 +77,7 @@ pub fn ensure_initial_states(
     parents_without_initial: Query<(Entity, &Children), Without<InitialState>>,
 ) {
     for (parent_entity, children) in parents_without_initial.iter() {
-        if let Some(&first_child) = children.first() {
+        if let Some(first_child) = children.iter().next() {
             commands.entity(parent_entity).insert(InitialState(first_child));
         }
     }

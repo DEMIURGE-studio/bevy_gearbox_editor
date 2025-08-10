@@ -50,26 +50,15 @@
       components: {
         "bevy_ecs::hierarchy::ChildOf": (4294967327),
         "bevy_ecs::name::Name": "Ready",
-        "bevy_gearbox::transition_listener::TransitionListener<repeater::CastAbility>": (
-          connection: (
-            target: 4294967329,
-            guards: None,
-            internal: false,
-          ),
-        ),
+        "bevy_gearbox::transitions::Transitions": ([
+          4294967330
+        ]),
       },
     ),
     4294967329: (
       components: {
         "bevy_ecs::hierarchy::ChildOf": (4294967327),
         "bevy_ecs::name::Name": "Repeating",
-        "bevy_gearbox::transition_listener::TransitionListener<repeater::OnComplete>": (
-          connection: (
-            target: 4294967328,
-            guards: None,
-            internal: false,
-          ),
-        ),
         "repeater::Repeater": (
           timer: (
             stopwatch: (
@@ -89,6 +78,27 @@
           ),
           remaining: 5,
         ),
+        "bevy_gearbox::transitions::Transitions": ([
+          4294967331
+        ]),
+      },
+    ),
+    4294967330: (
+      components: {
+        "bevy_ecs::name::Name": "Edge Ready -> Repeating (CastAbility)",
+        "bevy_gearbox::transitions::Source": (4294967328),
+        "bevy_gearbox::transitions::EdgeTarget": (4294967329),
+        "bevy_gearbox::transitions::TransitionKind": External,
+        "bevy_gearbox::transitions::TransitionEdgeListener<repeater::CastAbility>": (),
+      },
+    ),
+    4294967331: (
+      components: {
+        "bevy_ecs::name::Name": "Edge Repeating -> Ready (OnComplete)",
+        "bevy_gearbox::transitions::Source": (4294967329),
+        "bevy_gearbox::transitions::EdgeTarget": (4294967328),
+        "bevy_gearbox::transitions::TransitionKind": External,
+        "bevy_gearbox::transitions::TransitionEdgeListener<repeater::OnComplete>": (),
       },
     ),
   },

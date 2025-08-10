@@ -6,6 +6,9 @@
 //! - Entity creation and hierarchy management
 
 use bevy::prelude::*;
+use bevy::ecs::reflect::ReflectComponent;
+use bevy::prelude::AppTypeRegistry;
+use bevy_gearbox::transitions::{Source, EdgeTarget};
 use bevy_gearbox::{StateMachineRoot, InitialState};
 use bevy_egui::egui;
 
@@ -212,6 +215,42 @@ pub fn render_context_menu(
                 egui::Frame::popup(ui.style())
                     .show(ui, |ui| {
                         ui.set_min_width(120.0);
+                        
+                        if ui.button("Inspect").clicked() {
+                            // Queue a world-access closure to resolve the edge entity and set inspected_entity
+                            let event_type_clone = event_type.clone();
+                            commands.queue(move |world: &mut World| {
+                                // Resolve TransitionEdgeListener<Event> component via reflection
+                                let registry_res = world.resource::<AppTypeRegistry>().clone();
+                                let registry = registry_res.read();
+                                let mut reflect_listener: Option<ReflectComponent> = None;
+                                for registration in registry.iter() {
+                                    let type_info = registration.type_info();
+                                    let type_name = type_info.type_path_table().short_path();
+                                    if type_name.starts_with("TransitionEdgeListener<") && type_name.contains(&event_type_clone) {
+                                        reflect_listener = registration.data::<ReflectComponent>().cloned();
+                                        break;
+                                    }
+                                }
+                                if let Some(reflect_listener) = reflect_listener {
+                                    let mut q = world.query::<(Entity, &Source, &EdgeTarget)>();
+                                    for (edge, src, tgt) in q.iter(world) {
+                                        if src.0 == source && tgt.0 == target {
+                                            if reflect_listener.reflect(world.entity(edge)).is_some() {
+                                                // Set inspected entity to this edge
+                                                if let Some(mut es) = world.get_resource_mut::<EditorState>() {
+                                                    es.inspected_entity = Some(edge);
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                            editor_state.transition_context_menu = None;
+                            editor_state.transition_context_menu_position = None;
+                            ui.close_menu();
+                        }
                         
                         if ui.button("🗑 Delete Transition").clicked() {
                             commands.trigger(DeleteTransition {

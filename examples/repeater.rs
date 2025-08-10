@@ -9,16 +9,16 @@ fn main() {
         .add_plugins(GearboxPlugin)
         .add_systems(Startup, setup)
         .add_systems(Update, (input_system, repeater_system))
-        .add_observer(transition_listener::<CastAbility>)
-        .add_observer(transition_listener::<OnComplete>)
+        .add_observer(transition_edge_listener::<CastAbility>)
+        .add_observer(transition_edge_listener::<OnComplete>)
         .add_observer(print_enter_state_messages)
         .add_observer(reset_repeater_on_cast)
         .add_observer(propagate_event::<CastAbility>)
         .add_observer(propagate_event::<OnComplete>)
         .register_type::<AbilityMachine>()
         .register_type::<Repeater>()
-        .register_type::<TransitionListener<CastAbility>>()
-        .register_type::<TransitionListener<OnComplete>>()
+        .register_type::<TransitionEdgeListener<CastAbility>>()
+        .register_type::<TransitionEdgeListener<OnComplete>>()
         .add_plugins(bevy_gearbox_editor::GearboxEditorPlugin)
         .run();
 }
@@ -91,7 +91,7 @@ fn input_system(
 /// The core logic for the repeater. Ticks the timer and fires "projectiles".
 fn repeater_system(
     mut repeater_query: Query<(Entity, &mut Repeater), With<Active>>,
-    child_of_query: Query<&ChildOf>,
+    child_of_query: Query<&bevy_gearbox::StateChildOf>,
     root_query: Query<&StateMachineRoot>,
     time: Res<Time>,
     mut commands: Commands,
