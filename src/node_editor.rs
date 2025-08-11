@@ -220,10 +220,10 @@ pub fn show_machine_editor(
             }
             
             // Update transition rectangles before rendering
-            update_transition_rectangles(persistent_data);
+            update_transition_rectangles(persistent_data, child_of_query);
             
             // Render transition arrows after all nodes
-            render_transition_connections(ui, persistent_data, transient_data, commands);
+            render_transition_connections(ui, persistent_data, transient_data, child_of_query, commands);
             
             // Render initial state indicators
             render_initial_state_indicators(ui, persistent_data, &all_entities, selected_root);
@@ -346,6 +346,7 @@ fn render_transition_connections(
     ui: &mut egui::Ui,
     persistent_data: &mut StateMachinePersistentData,
     transient_data: &StateMachineTransientData,
+    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
     commands: &mut Commands,
 ) {
     // Extract data needed for rendering to avoid borrowing issues
@@ -367,24 +368,26 @@ fn render_transition_connections(
     let mut interaction_data = Vec::new();
     
     // First pass: Draw all the arrows (using painter)
-    for (_index, (source_start, source_end, target_start, target_end), _event_pos, _event_type, _is_dragging, _color) in &transitions_data {
-        // Draw the two arrow segments in white for visibility
-        draw_arrow(&painter, *source_start, *source_end, egui::Color32::WHITE);
-        draw_arrow(&painter, *target_start, *target_end, egui::Color32::WHITE);
+    for (index, (source_start, source_end, target_start, target_end), event_pos, _event_type, _is_dragging, _color) in &transitions_data {
+        let tconn = &persistent_data.visual_transitions[*index];
+        let source_rect = tconn.source_rect;
+        let is_ancestor = is_ancestor_of(tconn.source_entity, tconn.target_entity, child_of_query);
+        if is_ancestor {
+            // Curved segment from parent to event node, straight segment from event node to target
+            draw_fish_hook_to_point(&painter, source_rect, *event_pos, egui::Color32::WHITE);
+            draw_arrow(&painter, *event_pos, *target_end, egui::Color32::WHITE);
+        } else {
+            // Default two-segment
+            draw_arrow(&painter, *source_start, *source_end, egui::Color32::WHITE);
+            draw_arrow(&painter, *target_start, *target_end, egui::Color32::WHITE);
+        }
     }
     
     // Second pass: Draw interactive event nodes (using ui mutably)
     for (index, (_source_start, _source_end, _target_start, _target_end), event_pos, event_type, is_dragging, color) in transitions_data {
-        // Draw the interactive event node
+        // Draw the interactive event node (keep existing placement for now)
         let font_id = egui::FontId::new(12.0, egui::FontFamily::Proportional);
-        let response = draw_interactive_pill_label(
-            ui, 
-            event_pos, 
-            &event_type, 
-            font_id,
-            is_dragging,
-            color
-        );
+        let response = draw_interactive_pill_label(ui, event_pos, &event_type, font_id, is_dragging, color);
         
         // Store interaction data for later processing
         interaction_data.push((index, response));
@@ -423,18 +426,58 @@ fn render_transition_connections(
 }
 
 /// Update the rectangles in visual transitions to match current node positions
-fn update_transition_rectangles(persistent_data: &mut StateMachinePersistentData) {
+fn update_transition_rectangles(
+    persistent_data: &mut StateMachinePersistentData,
+    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+) {
+    // Snapshot node rects first to avoid borrow conflicts
+    let mut node_rects: std::collections::HashMap<Entity, egui::Rect> = std::collections::HashMap::new();
+    for (entity, node) in &persistent_data.nodes {
+        node_rects.insert(*entity, node.current_rect());
+    }
+    
     for transition in &mut persistent_data.visual_transitions {
-        if let Some(source_node) = persistent_data.nodes.get(&transition.source_entity) {
-            transition.source_rect = source_node.current_rect();
-        }
-        if let Some(target_node) = persistent_data.nodes.get(&transition.target_entity) {
-            transition.target_rect = target_node.current_rect();
-        }
+        if let Some(r) = node_rects.get(&transition.source_entity) { transition.source_rect = *r; }
+        if let Some(r) = node_rects.get(&transition.target_entity) { transition.target_rect = *r; }
         
         // Update event node position based on new source/target positions (unless being dragged)
         if !transition.is_dragging_event_node {
             transition.update_event_node_position();
+            // Constrain while auto-moving due to connected state movement
+            constrain_event_node_position(transition, &node_rects, child_of_query);
+        }
+    }
+}
+
+fn constrain_event_node_position(
+    transition: &mut crate::TransitionConnection,
+    node_rects: &std::collections::HashMap<Entity, egui::Rect>,
+    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+) {
+    // Determine which end is higher in the hierarchy
+    let source_depth = hierarchy_depth_from_pairs(transition.source_entity, child_of_query);
+    let target_depth = hierarchy_depth_from_pairs(transition.target_entity, child_of_query);
+    let higher = if source_depth <= target_depth { transition.source_entity } else { transition.target_entity };
+    let other = if higher == transition.source_entity { transition.target_entity } else { transition.source_entity };
+    let is_direct_child = match child_of_query.get(other) { Ok(rel) => rel.0 == higher, Err(_) => false };
+    let parent_for_pill = if is_direct_child { higher } else if let Ok(rel) = child_of_query.get(higher) { rel.0 } else { higher };
+    if let Some(parent_rect) = node_rects.get(&parent_for_pill) {
+        // Reconstruct an approximate ParentNode content rect assumptions are required here;
+        // since we only stored the whole rect, approximate content by shrinking top bar and margins
+        // Use a small heuristic: treat top 30px as title bar (matches ParentNode default)
+        let content_rect = egui::Rect::from_min_max(
+            egui::Pos2::new(parent_rect.min.x, parent_rect.min.y + 30.0),
+            parent_rect.max,
+        );
+        let margin = egui::Vec2::new(10.0, 10.0);
+        let pill_half = egui::Vec2::new(45.0, 12.0);
+        let min_allowed = content_rect.min + margin + pill_half;
+        let max_allowed = content_rect.max - margin - pill_half;
+        if min_allowed.x <= max_allowed.x && min_allowed.y <= max_allowed.y {
+            transition.event_node_position = egui::Pos2::new(
+                transition.event_node_position.x.clamp(min_allowed.x, max_allowed.x),
+                transition.event_node_position.y.clamp(min_allowed.y, max_allowed.y),
+            );
         }
     }
 }
@@ -637,4 +680,82 @@ fn draw_dashed_arrow(painter: &egui::Painter, start: egui::Pos2, end: egui::Pos2
         [end, arrowhead_point2],
         egui::Stroke::new(2.0, color),
     );
+}
+
+fn is_ancestor_of(source: Entity, target: Entity, child_of_query: &Query<&bevy_gearbox::StateChildOf>) -> bool {
+    let mut current = target;
+    while let Ok(child_of) = child_of_query.get(current) {
+        if child_of.0 == source {
+            return true;
+        }
+        current = child_of.0;
+    }
+    false
+}
+
+fn draw_fish_hook_to_point(
+    painter: &egui::Painter,
+    parent_rect: egui::Rect,
+    event_pos: egui::Pos2,
+    color: egui::Color32,
+) {
+    // p0: closest point on parent's edge to the event position
+    let p0 = closest_point_on_rect_edge(parent_rect, event_pos);
+
+    // Direction from event toward p0
+    let mut dir = p0 - event_pos;
+    let len = dir.length();
+    if len > 1e-3 { dir /= len; } else { dir = egui::Vec2::new(1.0, 0.0); }
+
+    // p1: extend beyond p0 by 10px along dir
+    let p1 = p0 + dir * 10.0;
+
+    // p2: perpendicular from p1 by ~10px
+    let perp = egui::Vec2::new(-dir.y, dir.x);
+    let p2 = p1 + perp * 10.0;
+
+    // p3: from p2 back towards the event by 10px (opposite dir)
+    let p3 = p2 - dir * 10.0;
+
+    // Curve to p3, then straight line to event_pos (no arrow here; arrow on final segment to target)
+    draw_cubic_bezier(painter, p0, p1, p2, p3, color);
+    painter.line_segment([p3, event_pos], egui::Stroke::new(2.0, color));
+}
+
+fn draw_cubic_bezier(
+    painter: &egui::Painter,
+    p0: egui::Pos2,
+    p1: egui::Pos2,
+    p2: egui::Pos2,
+    p3: egui::Pos2,
+    color: egui::Color32,
+) {
+    let segments = 24;
+    let mut prev = p0;
+    for i in 1..=segments {
+        let t = i as f32 / segments as f32;
+        let pt = cubic_bezier_point(p0, p1, p2, p3, t);
+        painter.line_segment([prev, pt], egui::Stroke::new(2.0, color));
+        prev = pt;
+    }
+}
+
+fn cubic_bezier_point(p0: egui::Pos2, p1: egui::Pos2, p2: egui::Pos2, p3: egui::Pos2, t: f32) -> egui::Pos2 {
+    let u = 1.0 - t;
+    let uu = u * u;
+    let uuu = uu * u;
+    let tt = t * t;
+    let ttt = tt * t;
+    let x = uuu * p0.x + 3.0 * uu * t * p1.x + 3.0 * u * tt * p2.x + ttt * p3.x;
+    let y = uuu * p0.y + 3.0 * uu * t * p1.y + 3.0 * u * tt * p2.y + ttt * p3.y;
+    egui::Pos2::new(x, y)
+}
+
+fn hierarchy_depth_from_pairs(mut entity: Entity, child_of_query: &Query<&bevy_gearbox::StateChildOf>) -> usize {
+    let mut depth = 0;
+    while let Ok(rel) = child_of_query.get(entity) {
+        depth += 1;
+        entity = rel.0;
+    }
+    depth
 }

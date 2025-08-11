@@ -71,7 +71,7 @@ pub fn handle_node_action(
         NodeAction::AddChild => {
             // Create a new child entity
             let child_entity = commands.spawn((
-                ChildOf(event.entity),
+                bevy_gearbox::StateChildOf(event.entity),
                 Name::new("New State"),
             )).id();
         
