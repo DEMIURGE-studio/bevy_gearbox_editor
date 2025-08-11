@@ -6,9 +6,8 @@
 //! - Entity creation and hierarchy management
 
 use bevy::prelude::*;
-use bevy::ecs::reflect::ReflectComponent;
-use bevy::prelude::AppTypeRegistry;
-use bevy_gearbox::transitions::{Source, EdgeTarget};
+// use bevy::ecs::reflect::ReflectComponent;
+// use bevy::prelude::AppTypeRegistry;
 use bevy_gearbox::{StateMachineRoot, InitialState};
 use bevy_egui::egui;
 
@@ -217,34 +216,37 @@ pub fn render_context_menu(
                         ui.set_min_width(120.0);
                         
                         if ui.button("Inspect").clicked() {
-                            // Queue a world-access closure to resolve the edge entity and set inspected_entity
+                            // Resolve using the stored edge_entity in the visual model
                             let event_type_clone = event_type.clone();
                             commands.queue(move |world: &mut World| {
-                                // Resolve TransitionEdgeListener<Event> component via reflection
-                                let registry_res = world.resource::<AppTypeRegistry>().clone();
-                                let registry = registry_res.read();
-                                let mut reflect_listener: Option<ReflectComponent> = None;
-                                for registration in registry.iter() {
-                                    let type_info = registration.type_info();
-                                    let type_name = type_info.type_path_table().short_path();
-                                    if type_name.starts_with("TransitionEdgeListener<") && type_name.contains(&event_type_clone) {
-                                        reflect_listener = registration.data::<ReflectComponent>().cloned();
-                                        break;
-                                    }
-                                }
-                                if let Some(reflect_listener) = reflect_listener {
-                                    let mut q = world.query::<(Entity, &Source, &EdgeTarget)>();
-                                    for (edge, src, tgt) in q.iter(world) {
-                                        if src.0 == source && tgt.0 == target {
-                                            if reflect_listener.reflect(world.entity(edge)).is_some() {
-                                                // Set inspected entity to this edge
-                                                if let Some(mut es) = world.get_resource_mut::<EditorState>() {
-                                                    es.inspected_entity = Some(edge);
-                                                }
-                                                break;
-                                            }
+                                info!(
+                                    "Inspect requested (direct): source={:?} target={:?} event_type={}",
+                                    source, target, event_type_clone
+                                );
+                                let Some(editor_state) = world.get_resource::<EditorState>() else {
+                                    warn!("Inspect: EditorState missing");
+                                    return;
+                                };
+                                let Some(root) = editor_state.selected_machine else {
+                                    warn!("Inspect: no selected machine");
+                                    return;
+                                };
+                                let Some(persistent) = world.get::<StateMachinePersistentData>(root) else {
+                                    warn!("Inspect: missing StateMachinePersistentData on root {:?}", root);
+                                    return;
+                                };
+                                if let Some(conn) = persistent.visual_transitions.iter().find(|t| t.source_entity == source && t.target_entity == target && t.event_type == event_type_clone) {
+                                    let e = conn.edge_entity;
+                                    if world.entities().contains(e) {
+                                        if let Some(mut es) = world.get_resource_mut::<EditorState>() {
+                                            es.inspected_entity = Some(e);
                                         }
+                                        info!("Inspect: set inspected_entity to edge {:?}", e);
+                                    } else {
+                                        warn!("Inspect: stored edge_entity {:?} no longer exists", e);
                                     }
+                                } else {
+                                    warn!("Inspect: no matching TransitionConnection found in visual_transitions");
                                 }
                             });
                             editor_state.transition_context_menu = None;

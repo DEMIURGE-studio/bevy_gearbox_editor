@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContext, EguiPlugin};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use bevy_gearbox::{StateMachineRoot, InitialState};
-use bevy_gearbox::transitions::{EdgeTarget, Source, TransitionKind};
+use bevy_gearbox::transitions::{Target, Source, TransitionKind, AlwaysEdge};
 use bevy_ecs::schedule::ScheduleLabel;
 
 // Module declarations
@@ -193,7 +193,7 @@ fn handle_transition_creation_request(
     // Start the transition creation process
     transient_data.transition_creation.start_transition(event.source_entity);
     
-    // Discover available event types for TransitionEdgeListener
+    // Discover available event types for TransitionListener
     discover_transition_edge_listener_event_types(&mut transient_data.transition_creation, &type_registry);
 }
 
@@ -219,10 +219,17 @@ fn handle_create_transition(
     let source = event.source_entity;
     let target = event.target_entity;
     let event_type = event.event_type.clone();
+
+    let edge_entity = commands.spawn_empty().id();
     
     commands.queue(move |world: &mut World| {
-        if let Err(e) = create_transition_edge_entity(world, source, target, &event_type) {
-            warn!("Failed to create transition: {}", e);
+        match create_transition_edge_entity(world, edge_entity, source, target, &event_type) {
+            Ok(edge) => {
+                info!("✅ Created transition edge {:?} for {:?} -> {:?} ({})", edge, source, target, event_type);
+            }
+            Err(e) => {
+                warn!("Failed to create transition: {}", e);
+            }
         }
     });
     
@@ -242,6 +249,7 @@ fn handle_create_transition(
         
         persistent_data.visual_transitions.push(TransitionConnection {
             source_entity: event.source_entity,
+            edge_entity: edge_entity,
             target_entity: event.target_entity,
             event_type: event.event_type.clone(),
             source_rect,
@@ -253,7 +261,7 @@ fn handle_create_transition(
     }
 }
 
-/// Discover available TransitionEdgeListener event types from the type registry
+/// Discover available TransitionListener event types from the type registry
 fn discover_transition_edge_listener_event_types(
     transition_state: &mut TransitionCreationState,
     type_registry: &AppTypeRegistry,
@@ -264,10 +272,10 @@ fn discover_transition_edge_listener_event_types(
     for registration in registry.iter() {
         let type_path = registration.type_info().type_path();
         
-        // Look for TransitionEdgeListener<EventType> patterns
-        if let Some(start) = type_path.find("TransitionEdgeListener<") {
+        // Look for TransitionListener<EventType> patterns
+        if let Some(start) = type_path.find("TransitionListener<") {
             if let Some(end) = type_path[start..].find('>') {
-                let event_type = &type_path[start + 24..start + end]; // 24 = len("TransitionEdgeListener<")
+                let event_type = &type_path[start + 24..start + end]; // 24 = len("TransitionListener<")
                 
                 // Skip generic parameters and extract just the event type name
                 if let Some(last_part) = event_type.split("::").last() {
@@ -279,18 +287,27 @@ fn discover_transition_edge_listener_event_types(
         }
     }
     
-    // Sort for consistent ordering
+    // Sort for consistent ordering and prepend a default "Always" option
     event_types.sort();
+    if !event_types.iter().any(|e| e == "Always") {
+        event_types.insert(0, "Always".to_string());
+    }
     transition_state.available_event_types = event_types;
 }
 
 /// Create a transition edge entity using reflection (marker component on the edge)
 fn create_transition_edge_entity(
     world: &mut World,
+    edge_entity: Entity,
     source_entity: Entity,
     target_entity: Entity,
     event_type: &str,
 ) -> Result<(), String> {
+    // Special-case: create an Always transition without a listener
+    if event_type == "Always" {
+        world.entity_mut(edge_entity).insert((Source(source_entity), Target(target_entity), TransitionKind::External, AlwaysEdge));
+        return Ok(());
+    }
     // Find the full TransitionListener type path and get reflection data
     let (type_path, reflect_component) = {
         let type_registry = world.resource::<AppTypeRegistry>();
@@ -299,14 +316,14 @@ fn create_transition_edge_entity(
         let mut transition_listener_type_path = None;
         for registration in registry.iter() {
             let type_path = registration.type_info().type_path();
-            if type_path.contains("TransitionEdgeListener<") && type_path.contains(event_type) {
+            if type_path.contains("TransitionListener<") && type_path.contains(event_type) {
                 transition_listener_type_path = Some(type_path.to_string());
                 break;
             }
         }
         
         let Some(type_path) = transition_listener_type_path else {
-            return Err(format!("TransitionEdgeListener<{}> not found in type registry", event_type));
+            return Err(format!("TransitionListener<{}> not found in type registry", event_type));
         };
         
         // Get reflection data
@@ -315,7 +332,7 @@ fn create_transition_edge_entity(
         (type_path, reflect_component.clone())
     };
     // Spawn edge entity
-    let edge = world.spawn((Source(source_entity), EdgeTarget(target_entity), TransitionKind::External)).id();
+    let edge = world.spawn((Source(source_entity), Target(target_entity), TransitionKind::External)).id();
 
     // Attach the event-specific listener via reflection to the edge entity (empty struct)
     {
@@ -324,7 +341,7 @@ fn create_transition_edge_entity(
         let Some(registration) = registry.get_with_type_path(&type_path) else { return Err(format!("Type registration not found for {}", type_path)); };
         let type_info = registration.type_info();
         let mut dynamic_struct = bevy::reflect::DynamicStruct::default();
-        if let bevy::reflect::TypeInfo::Struct(_) = type_info { dynamic_struct.set_represented_type(Some(type_info)); } else { return Err(format!("TransitionEdgeListener is not a struct type: {}", type_path)); }
+        if let bevy::reflect::TypeInfo::Struct(_) = type_info { dynamic_struct.set_represented_type(Some(type_info)); } else { return Err(format!("TransitionListener is not a struct type: {}", type_path)); }
         let mut entity_mut = world.entity_mut(edge);
         reflect_component.insert(&mut entity_mut, dynamic_struct.as_partial_reflect(), &registry);
     }
@@ -408,25 +425,25 @@ fn handle_delete_transition(
     commands.queue(move |world: &mut World| {
         let registry = world.resource::<AppTypeRegistry>().clone();
         let registry = registry.read();
-        // Find the TransitionEdgeListener<Event> type registration
+        // Find the TransitionListener<Event> type registration
         let mut reflect_listener: Option<bevy::ecs::reflect::ReflectComponent> = None;
         for registration in registry.iter() {
             let type_info = registration.type_info();
             let type_name = type_info.type_path_table().short_path();
-            if type_name.starts_with("TransitionEdgeListener<") && type_name.contains(&event_type) {
+            if type_name.starts_with("TransitionListener<") && type_name.contains(&event_type) {
                 reflect_listener = registration.data::<ReflectComponent>().cloned();
                 break;
             }
         }
         if reflect_listener.is_none() {
-            warn!("Could not resolve TransitionEdgeListener<{}> for deletion", event_type);
+            warn!("Could not resolve TransitionListener<{}> for deletion", event_type);
             return;
         }
         let reflect_listener = reflect_listener.unwrap();
 
-        // Search for an edge with Source, EdgeTarget, and that listener
+        // Search for an edge with Source, Target, and that listener
         let mut to_remove: Option<Entity> = None;
-        let mut q = world.query::<(Entity, &Source, &EdgeTarget)>();
+        let mut q = world.query::<(Entity, &Source, &Target)>();
         for (edge, src, tgt) in q.iter(world) {
             if src.0 == source_entity && tgt.0 == target_entity {
                 if reflect_listener.reflect(world.entity(edge)).is_some() {
@@ -448,7 +465,7 @@ fn handle_delete_transition(
 fn handle_transition_pulse(
     trigger: Trigger<bevy_gearbox::Transition>,
     mut state_machines: Query<&mut StateMachineTransientData, With<StateMachineRoot>>,
-    edge_target_query: Query<&EdgeTarget>,
+    edge_target_query: Query<&Target>,
 ) {
     let event = trigger.event();
     let target_entity = trigger.target(); // This is the state machine root

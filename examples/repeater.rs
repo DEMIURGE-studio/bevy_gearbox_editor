@@ -17,8 +17,8 @@ fn main() {
         .add_observer(propagate_event::<OnComplete>)
         .register_type::<AbilityMachine>()
         .register_type::<Repeater>()
-        .register_type::<TransitionEdgeListener<CastAbility>>()
-        .register_type::<TransitionEdgeListener<OnComplete>>()
+        .register_type::<TransitionListener<CastAbility>>()
+        .register_type::<TransitionListener<OnComplete>>()
         .add_plugins(bevy_gearbox_editor::GearboxEditorPlugin)
         .run();
 }

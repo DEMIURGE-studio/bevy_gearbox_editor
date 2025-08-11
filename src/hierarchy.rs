@@ -22,7 +22,7 @@ pub fn handle_parent_child_movement(
     trigger: Trigger<NodeDragged>,
     editor_state: Res<EditorState>,
     mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
-    child_of_query: Query<(Entity, &ChildOf)>,
+    child_of_query: Query<(Entity, &bevy_gearbox::StateChildOf)>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
@@ -90,7 +90,7 @@ pub fn ensure_initial_states(
 pub fn constrain_children_to_parents(
     editor_state: Res<EditorState>,
     mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
-    child_of_query: Query<(Entity, &ChildOf)>,
+    child_of_query: Query<(Entity, &bevy_gearbox::StateChildOf)>,
 ) {
     let Some(selected_machine) = editor_state.selected_machine else {
         return;
@@ -117,7 +117,7 @@ pub fn constrain_children_to_parents(
 fn constrain_child_to_parent(
     child_entity: Entity,
     machine_data: &mut StateMachinePersistentData,
-    child_of_query: &Query<(Entity, &ChildOf)>,
+    child_of_query: &Query<(Entity, &bevy_gearbox::StateChildOf)>,
 ) {
     if let Ok((_, child_of)) = child_of_query.get(child_entity) {
         if let Some(parent_node) = machine_data.nodes.get(&child_of.0) {

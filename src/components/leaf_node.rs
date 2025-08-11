@@ -23,7 +23,7 @@ impl LeafNode {
         text: &str,
         entity_id: Option<&str>,
         is_selected: bool,
-        is_root: bool,
+        _is_root: bool,
         is_editing: bool,
         editing_text: &mut String,
         should_focus: bool,
@@ -125,8 +125,8 @@ impl LeafNode {
             custom_color
         );
         
-        // Add the + button for transitions (only if selected and not root)
-        if is_selected && !is_root {
+        // Add the + button for transitions (show for selected nodes, including root for global transitions)
+        if is_selected {
             let button_size = 16.0;
             let button_pos = egui::Pos2::new(
                 rect.max.x - button_size - 4.0,

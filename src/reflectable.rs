@@ -34,6 +34,7 @@ impl Component for ReflectableStateMachinePersistentData {
         for transition in this.visual_transitions.iter() {
             new_visual_transitions.push(ReflectableTransitionConnection {
                 source_entity: entity_mapper.get_mapped(transition.source_entity),
+                edge_entity: entity_mapper.get_mapped(transition.edge_entity),
                 target_entity: entity_mapper.get_mapped(transition.target_entity),
                 event_type: transition.event_type.clone(),
                 position: transition.position.clone(),
@@ -59,6 +60,7 @@ pub enum ReflectableNodeType {
 #[derive(Reflect, Clone)]
 pub struct ReflectableTransitionConnection {
     pub source_entity: Entity,
+    pub edge_entity: Entity,
     pub target_entity: Entity,
     pub event_type: String,
     pub position: Vec2,
@@ -103,6 +105,7 @@ impl ReflectableStateMachinePersistentData {
         for transition in &state_machine.visual_transitions {
             visual_transitions.push(ReflectableTransitionConnection {
                 source_entity: transition.source_entity,
+                edge_entity: transition.edge_entity,
                 target_entity: transition.target_entity,
                 event_type: transition.event_type.clone(),
                 position: vec2_from_pos2(transition.event_node_position),
@@ -139,6 +142,7 @@ impl ReflectableStateMachinePersistentData {
         for reflectable_transition in &self.visual_transitions {
             visual_transitions.push(TransitionConnection {
                 source_entity: reflectable_transition.source_entity,
+                edge_entity: reflectable_transition.edge_entity,
                 target_entity: reflectable_transition.target_entity,
                 event_type: reflectable_transition.event_type.clone(),
                 source_rect: egui::Rect::NOTHING, // Will be updated when nodes are rendered

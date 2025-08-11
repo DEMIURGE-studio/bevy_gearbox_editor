@@ -99,7 +99,7 @@ impl ParentNode {
         name: &str,
         entity_id: Option<&str>,
         is_selected: bool,
-        is_root: bool,
+        _is_root: bool,
         is_editing: bool,
         editing_text: &mut String,
         should_focus: bool,
@@ -143,8 +143,8 @@ impl ParentNode {
         // Draw the parent node (with editing support)
         self.draw_parent_node_with_editing(ui, rect, title_rect, name, entity_id, is_editing, editing_text, should_focus, first_focus, custom_color);
         
-        // Add the + button for transitions (only if selected and not root)
-        if is_selected && !is_root {
+        // Add the + button for transitions (show for selected nodes, including root for global transitions)
+        if is_selected {
             let button_size = 16.0;
             let button_pos = egui::Pos2::new(
                 rect.max.x - button_size - 4.0,

@@ -474,6 +474,7 @@ pub struct RenderItem {
 #[derive(Debug, Clone)]
 pub struct TransitionConnection {
     pub source_entity: Entity,
+    pub edge_entity: Entity,
     pub target_entity: Entity,
     pub event_type: String,
     pub source_rect: egui::Rect,

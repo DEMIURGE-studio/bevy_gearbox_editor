@@ -29,6 +29,7 @@
           visual_transitions: [
             (
               source_entity: 4294967328,
+              edge_entity: 4294967330,
               target_entity: 4294967329,
               event_type: "CastAbility",
               position: (428.26563, 155.5),
@@ -36,6 +37,7 @@
             ),
             (
               source_entity: 4294967329,
+              edge_entity: 4294967331,
               target_entity: 4294967328,
               event_type: "OnComplete",
               position: (532.2656, 199.5),
@@ -87,18 +89,18 @@
       components: {
         "bevy_ecs::name::Name": "Edge Ready -> Repeating (CastAbility)",
         "bevy_gearbox::transitions::Source": (4294967328),
-        "bevy_gearbox::transitions::EdgeTarget": (4294967329),
+        "bevy_gearbox::transitions::Target": (4294967329),
         "bevy_gearbox::transitions::TransitionKind": External,
-        "bevy_gearbox::transitions::TransitionEdgeListener<repeater::CastAbility>": (),
+        "bevy_gearbox::transitions::TransitionListener<repeater::CastAbility>": (),
       },
     ),
     4294967331: (
       components: {
         "bevy_ecs::name::Name": "Edge Repeating -> Ready (OnComplete)",
         "bevy_gearbox::transitions::Source": (4294967329),
-        "bevy_gearbox::transitions::EdgeTarget": (4294967328),
+        "bevy_gearbox::transitions::Target": (4294967328),
         "bevy_gearbox::transitions::TransitionKind": External,
-        "bevy_gearbox::transitions::TransitionEdgeListener<repeater::OnComplete>": (),
+        "bevy_gearbox::transitions::TransitionListener<repeater::OnComplete>": (),
       },
     ),
   },
