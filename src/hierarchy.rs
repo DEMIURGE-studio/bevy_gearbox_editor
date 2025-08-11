@@ -74,10 +74,10 @@ pub fn handle_parent_child_movement(
 /// Any entity with children but no InitialState will get one pointing to its first child.
 pub fn ensure_initial_states(
     mut commands: Commands,
-    parents_without_initial: Query<(Entity, &Children), Without<InitialState>>,
+    parents_without_initial: Query<(Entity, &bevy_gearbox::StateChildren), Without<InitialState>>,
 ) {
     for (parent_entity, children) in parents_without_initial.iter() {
-        if let Some(first_child) = children.iter().next() {
+        if let Some(&first_child) = children.into_iter().next() {
             commands.entity(parent_entity).insert(InitialState(first_child));
         }
     }
@@ -160,7 +160,7 @@ fn constrain_child_to_parent(
 pub fn recalculate_parent_sizes(
     editor_state: Res<EditorState>,
     mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
-    children_query: Query<&Children>,
+    children_query: Query<&bevy_gearbox::StateChildren>,
 ) {
     let Some(selected_machine) = editor_state.selected_machine else {
         return;
@@ -186,15 +186,15 @@ pub fn recalculate_parent_sizes(
             
             if let Ok(children) = children_query.get(parent_entity) {
                 // Check if all children have been processed (or are leaf nodes)
-                let all_children_ready = children.iter().all(|child| {
+                let all_children_ready = children.into_iter().all(|&child| {
                     processed_entities.contains(&child) || 
                     !children_query.contains(child) // Leaf nodes (no children)
                 });
                 
                 if all_children_ready {
                     // Collect child rectangles using an immutable borrow
-                    let child_rects: Vec<egui::Rect> = children.iter()
-                        .filter_map(|child| machine_data.nodes.get(&child))
+                    let child_rects: Vec<egui::Rect> = children.into_iter()
+                        .filter_map(|&child| machine_data.nodes.get(&child))
                         .map(|node| node.current_rect())
                         .collect();
                     

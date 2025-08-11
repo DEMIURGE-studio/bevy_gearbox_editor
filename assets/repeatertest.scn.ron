@@ -3,7 +3,7 @@
   entities: {
     4294967327: (
       components: {
-        "bevy_ecs::hierarchy::Children": ([
+        "bevy_gearbox::StateChildren": ([
           4294967328,
           4294967329,
         ]),
@@ -48,7 +48,7 @@
     ),
     4294967328: (
       components: {
-        "bevy_ecs::hierarchy::ChildOf": (4294967327),
+        "bevy_gearbox::StateChildOf": (4294967327),
         "bevy_ecs::name::Name": "Ready",
         "bevy_gearbox::transitions::Transitions": ([
           4294967330
@@ -57,7 +57,7 @@
     ),
     4294967329: (
       components: {
-        "bevy_ecs::hierarchy::ChildOf": (4294967327),
+        "bevy_gearbox::StateChildOf": (4294967327),
         "bevy_ecs::name::Name": "Repeating",
         "repeater::Repeater": (
           timer: (

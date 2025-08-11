@@ -87,8 +87,8 @@ fn editor_ui_system(
     mut state_machines: Query<(Entity, Option<&Name>, Option<&mut StateMachinePersistentData>, Option<&mut StateMachineTransientData>), With<StateMachineRoot>>,
     machine_list_query: Query<(Entity, Option<&Name>), With<StateMachineRoot>>,
     all_entities: Query<(Entity, Option<&Name>, Option<&InitialState>)>,
-    child_of_query: Query<&ChildOf>,
-    children_query: Query<&Children>,
+    child_of_query: Query<&bevy_gearbox::StateChildOf>,
+    children_query: Query<&bevy_gearbox::StateChildren>,
     active_query: Query<&bevy_gearbox::active::Active>,
     mut commands: Commands,
 ) {

@@ -515,7 +515,7 @@ pub fn get_entity_name_from_world(entity: Entity, world: &mut World) -> String {
 pub fn should_get_selection_boost(
     entity: Entity,
     selected_node: Option<Entity>,
-    child_of_query: &Query<&ChildOf>,
+    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
 ) -> bool {
     if let Some(selected) = selected_node {
         if entity == selected {

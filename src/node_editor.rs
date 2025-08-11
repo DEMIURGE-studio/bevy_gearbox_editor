@@ -24,7 +24,7 @@ pub fn update_node_types(
     mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
     parent_query: Query<Entity, With<InitialState>>,
     leaf_query: Query<Entity, Without<InitialState>>,
-    children_query: Query<&Children>,
+    children_query: Query<&bevy_gearbox::StateChildren>,
 ) {
     if let Some(selected_root) = editor_state.selected_machine {
         if let Ok(mut machine_data) = state_machines.get_mut(selected_root) {
@@ -88,8 +88,8 @@ pub fn show_machine_editor(
     persistent_data: &mut StateMachinePersistentData,
     transient_data: &mut StateMachineTransientData,
     all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
-    child_of_query: &Query<&ChildOf>,
-    children_query: &Query<&Children>,
+    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+    children_query: &Query<&bevy_gearbox::StateChildren>,
     active_query: &Query<&Active>,
     commands: &mut Commands,
 ) {
