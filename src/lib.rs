@@ -9,6 +9,7 @@ use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use bevy_gearbox::{StateMachineRoot, InitialState};
 use bevy_gearbox::transitions::{Target, Source, TransitionKind, AlwaysEdge};
 use bevy_ecs::schedule::ScheduleLabel;
+use bevy_gearbox::transitions::transition_listener;
 
 // Module declarations
 mod editor_state;
@@ -20,6 +21,7 @@ mod entity_inspector;
 mod machine_list;
 pub mod components;
 pub mod reflectable;
+mod node_kind;
 
 // Re-exports
 pub use editor_state::*;
@@ -45,6 +47,7 @@ impl Plugin for GearboxEditorPlugin {
 
         // Initialize resources
         app.init_resource::<EditorState>();
+        // NodeKind index is now transient per-machine; no global resource
 
         // Register reflectable types for scene serialization
         app.register_type::<reflectable::ReflectableStateMachinePersistentData>()
@@ -57,12 +60,30 @@ impl Plugin for GearboxEditorPlugin {
             .add_systems(EditorWindowContextPass, editor_ui_system)
             .add_systems(EditorWindowContextPass, entity_inspector::entity_inspector_system)
             .add_systems(Update, (
-                hierarchy::ensure_initial_states,
                 node_editor::update_node_types,
                 hierarchy::constrain_children_to_parents,
                 hierarchy::recalculate_parent_sizes,
                 update_transition_pulses,
-            ).chain());
+            ).chain())
+            // Edge target/source consistency fix-up based on the editor's visual model
+            .add_systems(Update, fix_edge_endpoints_from_visual_model)
+            // NodeKind dogfood state machines (per selected machine)
+            .add_systems(Update, node_kind::sync_node_kind_machines)
+            // NodeKind event listeners
+            .add_observer(transition_listener::<node_kind::AddChildClicked>)
+            .add_observer(transition_listener::<node_kind::ChildAdded>)
+            .add_observer(transition_listener::<node_kind::AllChildrenRemoved>)
+            .add_observer(transition_listener::<node_kind::MakeParallelClicked>)
+            .add_observer(transition_listener::<node_kind::MakeParentClicked>)
+            .add_observer(transition_listener::<node_kind::MakeLeafClicked>)
+            .add_observer(node_kind::on_enter_nodekind_state_parallel)
+            .add_observer(node_kind::on_enter_nodekind_state_parent)
+            .add_observer(node_kind::on_enter_nodekind_state_parent_via_make_parent)
+            .add_observer(node_kind::on_enter_nodekind_state_leaf)
+            .add_observer(node_kind::on_remove_state_children);
+
+        // Handle requests to set InitialState centrally
+        app.add_observer(handle_set_initial_state_request);
 
         // Add observers
         app.add_observer(context_menu::handle_context_menu_request)
@@ -90,6 +111,7 @@ fn editor_ui_system(
     child_of_query: Query<&bevy_gearbox::StateChildOf>,
     children_query: Query<&bevy_gearbox::StateChildren>,
     active_query: Query<&bevy_gearbox::active::Active>,
+    parallel_query: Query<&bevy_gearbox::Parallel>,
     mut commands: Commands,
 ) {
     // Only run if there's an editor window
@@ -117,6 +139,7 @@ fn editor_ui_system(
                         &child_of_query,
                         &children_query,
                         &active_query,
+                        &parallel_query,
                         &mut commands,
                     );
                     return;
@@ -139,6 +162,7 @@ fn editor_ui_system(
                         &child_of_query,
                         &children_query,
                         &active_query,
+                        &parallel_query,
                         &mut commands,
                     );
                     return;
@@ -154,6 +178,7 @@ fn editor_ui_system(
                     &child_of_query,
                     &children_query,
                     &active_query,
+                    &parallel_query,
                     &mut commands,
                 );
             }
@@ -168,7 +193,14 @@ fn editor_ui_system(
         }
 
         // Render context menu if requested
-        context_menu::render_context_menu(ctx, &mut editor_state, &mut commands);
+        context_menu::render_context_menu(
+            ctx,
+            &mut editor_state,
+            &mut commands,
+            &all_entities,
+            &child_of_query,
+            &parallel_query,
+        );
     }
 }
 
@@ -331,8 +363,11 @@ fn create_transition_edge_entity(
         let Some(reflect_component) = registration.data::<ReflectComponent>() else { return Err(format!("ReflectComponent not found for {}", type_path)); };
         (type_path, reflect_component.clone())
     };
-    // Spawn edge entity
-    let edge = world.spawn((Source(source_entity), Target(target_entity), TransitionKind::External)).id();
+    // Use the provided edge entity; insert core components
+    let edge = edge_entity;
+    world
+        .entity_mut(edge)
+        .insert((Source(source_entity), Target(target_entity), TransitionKind::External));
 
     // Attach the event-specific listener via reflection to the edge entity (empty struct)
     {
@@ -544,6 +579,42 @@ fn handle_delete_node(
     for entity in entities_to_delete {
         commands.entity(entity).despawn();
     }
+}
+
+/// Ensure `Source`/`Target` on edge entities match the editor's visual model.
+/// This provides a robust post-load correction in case scene entity mapping missed a reference.
+fn fix_edge_endpoints_from_visual_model(
+    state_machines: Query<&StateMachinePersistentData, With<StateMachineRoot>>,
+    mut commands: Commands,
+) {
+    for persistent in state_machines.iter() {
+        for t in &persistent.visual_transitions {
+            // If the edge exists, enforce endpoints from the visual model
+            // (This is idempotent and cheap)
+            commands.entity(t.edge_entity).insert((
+                Source(t.source_entity),
+                Target(t.target_entity),
+            ));
+        }
+    }
+}
+
+/// Observer to handle SetInitialStateRequested requests
+fn handle_set_initial_state_request(
+    trigger: Trigger<SetInitialStateRequested>,
+    mut commands: Commands,
+) {
+    let req = trigger.event();
+    let child = req.child_entity;
+    commands.queue(move |world: &mut World| {
+        if let Some(child_of) = world.entity(child).get::<bevy_gearbox::StateChildOf>() {
+            let parent = child_of.0;
+            world.entity_mut(parent).insert(InitialState(child));
+            info!("✅ Set InitialState({:?}) on parent {:?}", child, parent);
+        } else {
+            warn!("⚠️ SetInitialStateRequested: entity {:?} has no StateChildOf parent", child);
+        }
+    });
 }
 
 /// Recursively collect all entities in a hierarchy

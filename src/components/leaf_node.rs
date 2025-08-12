@@ -30,6 +30,25 @@ impl LeafNode {
         first_focus: bool,
         custom_color: Option<egui::Color32>,
     ) -> NodeResponse {
+        self.show_with_border_style(
+            ui, text, entity_id, is_selected, _is_root, is_editing, editing_text, should_focus, first_focus, custom_color, false,
+        )
+    }
+
+    pub fn show_with_border_style(
+        &mut self,
+        ui: &mut egui::Ui,
+        text: &str,
+        entity_id: Option<&str>,
+        is_selected: bool,
+        _is_root: bool,
+        is_editing: bool,
+        editing_text: &mut String,
+        should_focus: bool,
+        first_focus: bool,
+        custom_color: Option<egui::Color32>,
+        dotted_border: bool,
+    ) -> NodeResponse {
         // Determine text color based on background color
         let text_color = if let Some(bg_color) = custom_color {
             // If background is gold (active), use black text
@@ -122,7 +141,8 @@ impl LeafNode {
             editing_text,
             should_focus,
             first_focus,
-            custom_color
+            custom_color,
+            dotted_border
         );
         
         // Add the + button for transitions (show for selected nodes, including root for global transitions)
@@ -184,11 +204,12 @@ impl LeafNode {
         should_focus: bool,
         first_focus: bool,
         custom_color: Option<egui::Color32>,
+        dotted_border: bool,
     ) {
         if is_editing {
             self.draw_node_editing(ui, rect, subscript_galley, text_gap, editing_text, should_focus, first_focus);
         } else {
-            self.draw_node_normal(ui, rect, main_text_galley, subscript_galley, text_gap, custom_color);
+            self.draw_node_normal(ui, rect, main_text_galley, subscript_galley, text_gap, custom_color, dotted_border);
         }
     }
 
@@ -201,6 +222,7 @@ impl LeafNode {
         subscript_galley: Option<&egui::Galley>,
         text_gap: f32,
         custom_color: Option<egui::Color32>,
+        dotted_border: bool,
     ) {
         let painter = ui.painter();
         
@@ -212,13 +234,24 @@ impl LeafNode {
             bg_color,
         );
         
-        // Draw border
-        painter.rect_stroke(
-            rect,
-            egui::CornerRadius::same(10),
-            egui::Stroke::new(1.5, self.entity_node.border_color),
-            egui::StrokeKind::Outside,
-        );
+        // Draw border (dotted optional)
+        if dotted_border {
+            super::draw_dotted_rect(
+                painter,
+                rect,
+                egui::CornerRadius::same(10),
+                egui::Stroke::new(1.5, self.entity_node.border_color),
+                2.0,
+                3.0,
+            );
+        } else {
+            painter.rect_stroke(
+                rect,
+                egui::CornerRadius::same(10),
+                egui::Stroke::new(1.5, self.entity_node.border_color),
+                egui::StrokeKind::Outside,
+            );
+        }
         
         // Calculate text positioning
         let main_text_size = main_text_galley.size();

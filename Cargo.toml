@@ -15,7 +15,7 @@ bevy-inspector-egui = "0.32.0"
 bevy_asset = "0.16.1"
 bevy_ecs = "0.16.1"
 bevy_egui = "0.35.1"
-bevy_gearbox = "0.3.0"
+bevy_gearbox = { path = "../bevy_gearbox" }
 bevy_reflect = "0.16.1"
 disqualified = "1.0.0"
 egui = "0.31.1"

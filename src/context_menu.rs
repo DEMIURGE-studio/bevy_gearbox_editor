@@ -8,12 +8,13 @@
 use bevy::prelude::*;
 // use bevy::ecs::reflect::ReflectComponent;
 // use bevy::prelude::AppTypeRegistry;
-use bevy_gearbox::{StateMachineRoot, InitialState};
+use bevy_gearbox::{StateMachineRoot};
 use bevy_egui::egui;
 
-use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested, TransitionContextMenuRequested, DeleteTransition, DeleteNode};
+use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested, TransitionContextMenuRequested, DeleteTransition, DeleteNode, SetInitialStateRequested};
 use crate::components::{NodeType, LeafNode};
 use crate::{StateMachinePersistentData, StateMachineTransientData};
+use crate::node_kind::{AddChildClicked, MakeParallelClicked, MakeParentClicked, MakeLeafClicked};
 
 /// Observer to handle context menu requests
 /// 
@@ -87,26 +88,51 @@ pub fn handle_node_action(
                 let leaf_node = LeafNode::new(child_pos);
                 persistent_data.nodes.insert(child_entity, NodeType::Leaf(leaf_node));
             }
+
+            // Notify NodeKind machine for this parent
+            let parent_entity = event.entity;
+            if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
+                if let Some(&nk_root) = transient.node_kind_roots.get(&parent_entity) {
+                    commands.trigger_targets(AddChildClicked, nk_root);
+                    commands.trigger_targets(crate::node_kind::ChildAdded, nk_root);
+                }
+            }
         }
         NodeAction::Rename => {
             let entity_name = name_query.get(event.entity).unwrap().to_string();
             transient_data.text_editing.start_editing(event.entity, &entity_name);
         }
-        NodeAction::SetAsInitialState => {
-            // Set this entity as the initial state for its parent
-            // This requires finding the parent and updating its InitialState component
-            let target_entity = event.entity; // Capture the entity to avoid lifetime issues
-            commands.queue(move |world: &mut World| {
-                // Find the parent of this entity by getting its ChildOf component
-                if let Some(child_of) = world.entity(target_entity).get::<ChildOf>() {
-                    let parent_entity = child_of.0;
-                    // Set or update the InitialState component on the parent
-                    world.entity_mut(parent_entity).insert(InitialState(target_entity));
-                    info!("✅ Set entity {:?} as initial state for parent {:?}", target_entity, parent_entity);
-                } else {
-                    warn!("⚠️ Could not find parent for entity {:?} to set as initial state", target_entity);
+        NodeAction::MakeParallel => {
+            // Notify NodeKind machine to handle Parallel transition
+            let state_entity = event.entity;
+            if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
+                if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
+                    commands.trigger_targets(MakeParallelClicked, nk_root);
                 }
-            });
+            }
+        }
+        NodeAction::MakeParent => {
+            // Ask NK to become Parent from any current kind
+            let state_entity = event.entity;
+            if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
+                if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
+                    commands.trigger_targets(MakeParentClicked, nk_root);
+                }
+            }
+        }
+        NodeAction::MakeLeaf => {
+            // Ask NK to become Leaf from any current kind
+            let state_entity = event.entity;
+            if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
+                if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
+                    commands.trigger_targets(MakeLeafClicked, nk_root);
+                }
+            }
+        }
+        NodeAction::SetAsInitialState => {
+            // Request parent InitialState update via event; handled centrally
+            let child_entity = event.entity;
+            commands.trigger(SetInitialStateRequested { child_entity });
         }
         NodeAction::Delete => {
             // Trigger the delete node event
@@ -124,6 +150,9 @@ pub fn render_context_menu(
     ctx: &egui::Context,
     editor_state: &mut EditorState,
     commands: &mut Commands,
+    all_entities: &Query<(Entity, Option<&Name>, Option<&bevy_gearbox::InitialState>)>,
+    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+    parallel_query: &Query<&bevy_gearbox::Parallel>,
 ) {
     if let (Some(entity), Some(position)) = (editor_state.context_menu_entity, editor_state.context_menu_position) {
         let menu_id = egui::Id::new("context_menu").with(entity);
@@ -145,17 +174,7 @@ pub fn render_context_menu(
                             editor_state.context_menu_position = None;
                             ui.close_menu();
                         }
-                        
-                        if ui.button("Add child").clicked() {
-                            commands.trigger(NodeActionTriggered {
-                                entity,
-                                action: NodeAction::AddChild,
-                            });
-                            editor_state.context_menu_entity = None;
-                            editor_state.context_menu_position = None;
-                            ui.close_menu();
-                        }
-                        
+
                         if ui.button("Rename").clicked() {
                             commands.trigger(NodeActionTriggered {
                                 entity,
@@ -165,15 +184,89 @@ pub fn render_context_menu(
                             editor_state.context_menu_position = None;
                             ui.close_menu();
                         }
-                        
-                        if ui.button("Set as Initial State").clicked() {
-                            commands.trigger(NodeActionTriggered {
-                                entity,
-                                action: NodeAction::SetAsInitialState,
-                            });
-                            editor_state.context_menu_entity = None;
-                            editor_state.context_menu_position = None;
-                            ui.close_menu();
+
+                        // Determine type of node (Leaf/Parent/Parallel)
+                        let is_parent = all_entities.get(entity).ok().and_then(|(_,_,init)| init.map(|_|())).is_some();
+                        let is_parallel = parallel_query.get(entity).is_ok();
+                        let is_leaf = !is_parent && !is_parallel;
+
+                        // Common options already added: Inspect, Rename
+
+                        // Leaf-specific options: Make Parallel, Make Parent
+                        if is_leaf {
+                            if ui.button("Make Parallel").clicked() {
+                                commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeParallel });
+                                editor_state.context_menu_entity = None;
+                                editor_state.context_menu_position = None;
+                                ui.close_menu();
+                            }
+                            if ui.button("Make Parent").clicked() {
+                                commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeParent });
+                                editor_state.context_menu_entity = None;
+                                editor_state.context_menu_position = None;
+                                ui.close_menu();
+                            }
+                        }
+
+                        // Parent-specific: Make Parallel, Make Leaf, Add child
+                        if is_parent {
+                            if ui.button("Make Parallel").clicked() {
+                                commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeParallel });
+                                editor_state.context_menu_entity = None;
+                                editor_state.context_menu_position = None;
+                                ui.close_menu();
+                            }
+                            if ui.button("Make Leaf").clicked() {
+                                commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeLeaf });
+                                editor_state.context_menu_entity = None;
+                                editor_state.context_menu_position = None;
+                                ui.close_menu();
+                            }
+                            if ui.button("Add child").clicked() {
+                                commands.trigger(NodeActionTriggered { entity, action: NodeAction::AddChild });
+                                editor_state.context_menu_entity = None;
+                                editor_state.context_menu_position = None;
+                                ui.close_menu();
+                            }
+                        }
+
+                        // Parallel-specific: Make Leaf, Make Parent, Add child
+                        if is_parallel {
+                            if ui.button("Make Leaf").clicked() {
+                                commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeLeaf });
+                                editor_state.context_menu_entity = None;
+                                editor_state.context_menu_position = None;
+                                ui.close_menu();
+                            }
+                            if ui.button("Make Parent").clicked() {
+                                commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeParent });
+                                editor_state.context_menu_entity = None;
+                                editor_state.context_menu_position = None;
+                                ui.close_menu();
+                            }
+                            if ui.button("Add child").clicked() {
+                                commands.trigger(NodeActionTriggered { entity, action: NodeAction::AddChild });
+                                editor_state.context_menu_entity = None;
+                                editor_state.context_menu_position = None;
+                                ui.close_menu();
+                            }
+                        }
+
+                        // Child of a parent: Set as Initial State
+                        if let Ok(child_of) = child_of_query.get(entity) {
+                            let parent_has_initial = all_entities
+                                .get(child_of.0)
+                                .ok()
+                                .and_then(|(_,_,init)| init.map(|_| ()))
+                                .is_some();
+                            if parent_has_initial {
+                                if ui.button("Set as Initial State").clicked() {
+                                    commands.trigger(NodeActionTriggered { entity, action: NodeAction::SetAsInitialState });
+                                    editor_state.context_menu_entity = None;
+                                    editor_state.context_menu_position = None;
+                                    ui.close_menu();
+                                }
+                            }
                         }
                         
                         if ui.button("🗑 Delete Node").clicked() {

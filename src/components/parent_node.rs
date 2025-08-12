@@ -106,6 +106,23 @@ impl ParentNode {
         first_focus: bool,
         custom_color: Option<egui::Color32>,
     ) -> NodeResponse {
+        self.show_with_border_style(ui, name, entity_id, is_selected, _is_root, is_editing, editing_text, should_focus, first_focus, custom_color, false)
+    }
+
+    pub fn show_with_border_style(
+        &mut self,
+        ui: &mut egui::Ui,
+        name: &str,
+        entity_id: Option<&str>,
+        is_selected: bool,
+        _is_root: bool,
+        is_editing: bool,
+        editing_text: &mut String,
+        should_focus: bool,
+        first_focus: bool,
+        custom_color: Option<egui::Color32>,
+        dotted_border: bool,
+    ) -> NodeResponse {
         let rect = self.rect();
         let title_rect = self.title_bar_rect();
         
@@ -141,7 +158,7 @@ impl ParentNode {
         node_response.hovered = response.hovered();
         
         // Draw the parent node (with editing support)
-        self.draw_parent_node_with_editing(ui, rect, title_rect, name, entity_id, is_editing, editing_text, should_focus, first_focus, custom_color);
+        self.draw_parent_node_with_editing(ui, rect, title_rect, name, entity_id, is_editing, editing_text, should_focus, first_focus, custom_color, dotted_border);
         
         // Add the + button for transitions (show for selected nodes, including root for global transitions)
         if is_selected {
@@ -202,11 +219,12 @@ impl ParentNode {
         should_focus: bool,
         first_focus: bool,
         custom_color: Option<egui::Color32>,
+        dotted_border: bool,
     ) {
         if is_editing {
             self.draw_parent_node_editing(ui, rect, title_rect, entity_id, editing_text, should_focus, first_focus);
         } else {
-            self.draw_parent_node_normal(ui, rect, title_rect, name, entity_id, custom_color);
+            self.draw_parent_node_normal(ui, rect, title_rect, name, entity_id, custom_color, dotted_border);
         }
     }
 
@@ -219,6 +237,7 @@ impl ParentNode {
         name: &str,
         entity_id: Option<&str>,
         custom_color: Option<egui::Color32>,
+        dotted_border: bool,
     ) {
         let painter = ui.painter();
         // Main container background always uses normal color
@@ -231,13 +250,24 @@ impl ParentNode {
             bg_color,
         );
         
-        // Draw container border
-        painter.rect_stroke(
-            rect,
-            egui::CornerRadius::same(8),
-            egui::Stroke::new(1.5, self.entity_node.border_color),
-            egui::StrokeKind::Outside,
-        );
+        // Draw container border (dotted optional)
+        if dotted_border {
+            super::draw_dotted_rect(
+                painter,
+                rect,
+                egui::CornerRadius::same(8),
+                egui::Stroke::new(1.5, self.entity_node.border_color),
+                2.0,
+                3.0,
+            );
+        } else {
+            painter.rect_stroke(
+                rect,
+                egui::CornerRadius::same(8),
+                egui::Stroke::new(1.5, self.entity_node.border_color),
+                egui::StrokeKind::Outside,
+            );
+        }
         
         // Title bar background: use custom_color (gold) if active, otherwise slightly darker normal
         let title_bg_color = if let Some(active_color) = custom_color {

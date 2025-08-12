@@ -25,6 +25,7 @@ pub fn update_node_types(
     parent_query: Query<Entity, With<InitialState>>,
     leaf_query: Query<Entity, Without<InitialState>>,
     children_query: Query<&bevy_gearbox::StateChildren>,
+    parallel_query: Query<Entity, With<bevy_gearbox::Parallel>>,
 ) {
     if let Some(selected_root) = editor_state.selected_machine {
         if let Ok(mut machine_data) = state_machines.get_mut(selected_root) {
@@ -37,7 +38,7 @@ pub fn update_node_types(
         
         // Process each entity in the hierarchy
         for &entity in &descendants {
-            if parent_query.contains(entity) {
+            if parent_query.contains(entity) || parallel_query.contains(entity) {
                 // Entity should be a parent node
                 match machine_data.nodes.get(&entity) {
                     Some(NodeType::Parent(_)) => {
@@ -91,6 +92,7 @@ pub fn show_machine_editor(
     child_of_query: &Query<&bevy_gearbox::StateChildOf>,
     children_query: &Query<&bevy_gearbox::StateChildren>,
     active_query: &Query<&Active>,
+    parallel_query: &Query<&bevy_gearbox::Parallel>,
     commands: &mut Commands,
 ) {
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -163,10 +165,12 @@ pub fn show_machine_editor(
                     
                     let response = match node {
                         NodeType::Leaf(leaf_node) => {
-                            leaf_node.show(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut transient_data.text_editing.current_text, should_focus, first_focus, node_color)
+                            let dotted = is_direct_child_of_parallel(entity, child_of_query, parallel_query);
+                            leaf_node.show_with_border_style(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut transient_data.text_editing.current_text, should_focus, first_focus, node_color, dotted)
                         }
                         NodeType::Parent(parent_node) => {
-                            parent_node.show(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut transient_data.text_editing.current_text, should_focus, first_focus, node_color)
+                            let dotted = is_direct_child_of_parallel(entity, child_of_query, parallel_query);
+                            parent_node.show_with_border_style(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut transient_data.text_editing.current_text, should_focus, first_focus, node_color, dotted)
                         }
                     };
                     
@@ -423,6 +427,17 @@ fn render_transition_connections(
             transition.update_event_node_offset();
         }
     }
+}
+
+fn is_direct_child_of_parallel(
+    entity: Entity,
+    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+    parallel_query: &Query<&bevy_gearbox::Parallel>,
+) -> bool {
+    if let Ok(child_of) = child_of_query.get(entity) {
+        return parallel_query.get(child_of.0).is_ok();
+    }
+    false
 }
 
 /// Update the rectangles in visual transitions to match current node positions

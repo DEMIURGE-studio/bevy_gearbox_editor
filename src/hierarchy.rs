@@ -7,7 +7,7 @@
 //! - Managing InitialState components for parent entities
 
 use bevy::prelude::*;
-use bevy_gearbox::{InitialState, StateMachineRoot};
+use bevy_gearbox::StateMachineRoot;
 use std::collections::{HashMap, HashSet};
 
 use crate::editor_state::{EditorState, NodeDragged};
@@ -69,19 +69,7 @@ pub fn handle_parent_child_movement(
     }
 }
 
-/// System to ensure all parent entities have InitialState components
-/// 
-/// Any entity with children but no InitialState will get one pointing to its first child.
-pub fn ensure_initial_states(
-    mut commands: Commands,
-    parents_without_initial: Query<(Entity, &bevy_gearbox::StateChildren), Without<InitialState>>,
-) {
-    for (parent_entity, children) in parents_without_initial.iter() {
-        if let Some(&first_child) = children.into_iter().next() {
-            commands.entity(parent_entity).insert(InitialState(first_child));
-        }
-    }
-}
+// NOTE: Removed automatic ensure_initial_states.
 
 /// System to constrain child nodes to stay within their parent's bounds
 /// 

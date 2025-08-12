@@ -177,6 +177,8 @@ pub struct StateMachineTransientData {
     pub text_editing: TextEditingState,
     /// Active transition pulses for visual feedback
     pub transition_pulses: Vec<TransitionPulse>,
+    /// Mapping from editor state entity -> NodeKind machine root entity (editor-internal)
+    pub node_kind_roots: std::collections::HashMap<Entity, Entity>,
 }
 
 /// Resource that holds the editor's UI/window state
@@ -288,6 +290,9 @@ pub enum NodeAction {
     AddChild,
     Rename,
     SetAsInitialState,
+    MakeParallel,
+    MakeParent,
+    MakeLeaf,
     Delete,
 }
 
@@ -337,6 +342,12 @@ pub struct DeleteTransition {
 #[derive(Event)]
 pub struct DeleteNode {
     pub entity: Entity,
+}
+
+/// Event: request to set a child's parent InitialState to this child
+#[derive(Event)]
+pub struct SetInitialStateRequested {
+    pub child_entity: Entity,
 }
 
 /// Data to track transition pulse animation
@@ -459,10 +470,6 @@ pub fn draw_interactive_pill_label(
     
     response
 }
-
-
-
-
 
 /// Item to be rendered in the node editor, with z-order information
 pub struct RenderItem {
