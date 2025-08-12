@@ -7,6 +7,7 @@ use bevy::{
     tasks::IoTaskPool,
 };
 use bevy_ecs::component::{Mutable, StorageType};
+use bevy_gearbox::transitions::Transitions as EdgeTransitions;
 
 use crate::{StateMachinePersistentData, TransitionConnection};
 use crate::components::{NodeType, LeafNode, ParentNode};
@@ -113,10 +114,8 @@ impl ReflectableStateMachinePersistentData {
             });
         }
 
-        Self {
-            nodes,
-            visual_transitions,
-        }
+        // Caller is responsible for inserting this reflectable on the root before save
+        Self { nodes, visual_transitions }
     }
 
     /// Convert back to StateMachinePersistentData
@@ -193,30 +192,12 @@ impl ReflectableStateMachinePersistentData {
         // Find all entities in the state machine hierarchy
         let hierarchy_entities = Self::collect_state_machine_entities(world, root_entity)?;
         
-        // Convert persistent data to reflectable format before creating scene
-        if let Some(persistent_data) = world.get::<StateMachinePersistentData>(root_entity) {
-            let reflectable_data = ReflectableStateMachinePersistentData::from_persistent_data(
-                persistent_data, 
-                world
-            );
-            // Temporarily replace the persistent data with reflectable version
-            world.entity_mut(root_entity).remove::<StateMachinePersistentData>();
-            world.entity_mut(root_entity).insert(reflectable_data);
-        }
-        
         // Create scene using DynamicSceneBuilder
         let scene_builder = DynamicSceneBuilder::from_world(world);
         let scene = scene_builder
             .extract_entities(hierarchy_entities.iter().copied())
             .allow_all() // No need to deny anything as transient data does not implement reflect
             .build();
-        
-        // Restore the original persistent data
-        if let Some(reflectable_data) = world.get::<ReflectableStateMachinePersistentData>(root_entity) {
-            let persistent_data = reflectable_data.to_persistent_data();
-            world.entity_mut(root_entity).remove::<ReflectableStateMachinePersistentData>();
-            world.entity_mut(root_entity).insert(persistent_data);
-        }
         
         Ok(scene)
     }
@@ -246,24 +227,36 @@ impl ReflectableStateMachinePersistentData {
         world: &World,
         root_entity: Entity,
     ) -> Result<Vec<Entity>, Box<dyn std::error::Error>> {
-        let mut entities = Vec::new();
-        let mut to_process = vec![root_entity];
-        
+        let mut entities: Vec<Entity> = Vec::new();
+        let mut to_process: Vec<Entity> = vec![root_entity];
+
         while let Some(entity) = to_process.pop() {
             if !world.entities().contains(entity) {
                 continue;
             }
-            
-            entities.push(entity);
-            
-            // Add children to the processing queue
-            if let Some(children) = world.get::<Children>(entity) {
-                for child in children.iter() {
+
+            // Add this state entity
+            if !entities.contains(&entity) {
+                entities.push(entity);
+            }
+
+            // Include any transition edge entities referenced by this state's Transitions component
+            if let Some(transitions) = world.get::<EdgeTransitions>(entity) {
+                for &edge in transitions.get_transitions() {
+                    if world.entities().contains(edge) && !entities.contains(&edge) {
+                        entities.push(edge);
+                    }
+                }
+            }
+
+            // Traverse logical state hierarchy via StateChildren
+            if let Some(state_children) = world.get::<bevy_gearbox::StateChildren>(entity) {
+                for &child in state_children.into_iter() {
                     to_process.push(child);
                 }
             }
         }
-        
+
         Ok(entities)
     }
 
@@ -293,12 +286,13 @@ impl ReflectableStateMachinePersistentData {
 
 /// Determine the node type based on whether the entity has children
 fn determine_node_type(entity: Entity, world: &World) -> ReflectableNodeType {
-    // Check if the entity has children (making it a parent node)
-    if world.get::<Children>(entity).is_some() {
-        ReflectableNodeType::Parent
-    } else {
-        ReflectableNodeType::Leaf
+    // Parent if it has logical state children; otherwise Leaf
+    if let Some(state_children) = world.get::<bevy_gearbox::StateChildren>(entity) {
+        if state_children.into_iter().next().is_some() {
+            return ReflectableNodeType::Parent;
+        }
     }
+    ReflectableNodeType::Leaf
 }
 
 pub(crate) fn on_add_reflectable_state_machine(
@@ -312,6 +306,18 @@ pub(crate) fn on_add_reflectable_state_machine(
     let persistent_data = reflectable_data.to_persistent_data();
 
     commands.entity(entity)
-        .insert(persistent_data)
-        .remove::<ReflectableStateMachinePersistentData>();
+        .insert(persistent_data);
+}
+
+pub(crate) fn sync_reflectable_on_persistent_change(
+    query: Query<Entity, Changed<StateMachinePersistentData>>,
+    mut commands: Commands,
+) {
+    for entity in query.iter() {
+        commands.queue(move |world: &mut World| {
+            let persistent_data = world.entity(entity).get::<StateMachinePersistentData>().unwrap();
+            let reflectable_data = ReflectableStateMachinePersistentData::from_persistent_data(persistent_data, world);
+            world.entity_mut(entity).insert(reflectable_data);
+        });
+    }
 }

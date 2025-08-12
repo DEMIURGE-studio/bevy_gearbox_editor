@@ -23,7 +23,6 @@ impl LeafNode {
         text: &str,
         entity_id: Option<&str>,
         is_selected: bool,
-        _is_root: bool,
         is_editing: bool,
         editing_text: &mut String,
         should_focus: bool,
@@ -31,7 +30,7 @@ impl LeafNode {
         custom_color: Option<egui::Color32>,
     ) -> NodeResponse {
         self.show_with_border_style(
-            ui, text, entity_id, is_selected, _is_root, is_editing, editing_text, should_focus, first_focus, custom_color, false,
+            ui, text, entity_id, is_selected, is_editing, editing_text, should_focus, first_focus, custom_color, false,
         )
     }
 
@@ -41,7 +40,6 @@ impl LeafNode {
         text: &str,
         entity_id: Option<&str>,
         is_selected: bool,
-        _is_root: bool,
         is_editing: bool,
         editing_text: &mut String,
         should_focus: bool,

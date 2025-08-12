@@ -64,6 +64,7 @@ impl Plugin for GearboxEditorPlugin {
                 hierarchy::constrain_children_to_parents,
                 hierarchy::recalculate_parent_sizes,
                 update_transition_pulses,
+                reflectable::sync_reflectable_on_persistent_change,
             ).chain())
             // Edge target/source consistency fix-up based on the editor's visual model
             .add_systems(Update, fix_edge_endpoints_from_visual_model)
