@@ -166,11 +166,34 @@ pub fn show_machine_editor(
                     let response = match node {
                         NodeType::Leaf(leaf_node) => {
                             let dotted = is_direct_child_of_parallel(entity, child_of_query, parallel_query);
-                            leaf_node.show_with_border_style(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_editing, &mut transient_data.text_editing.current_text, should_focus, first_focus, node_color, dotted)
+                            leaf_node.show_with_border_style(
+                                ui, 
+                                &entity_name, 
+                                Some(&format!("{:?}", entity)), 
+                                is_selected, 
+                                is_editing, 
+                                &mut transient_data.text_editing.current_text, 
+                                should_focus, 
+                                first_focus, 
+                                node_color, 
+                                dotted,
+                            )
                         }
                         NodeType::Parent(parent_node) => {
                             let dotted = is_direct_child_of_parallel(entity, child_of_query, parallel_query);
-                            parent_node.show_with_border_style(ui, &entity_name, Some(&format!("{:?}", entity)), is_selected, is_root, is_editing, &mut transient_data.text_editing.current_text, should_focus, first_focus, node_color, dotted)
+                            parent_node.show_with_border_style(
+                                ui, 
+                                &entity_name, 
+                                Some(&format!("{:?}", entity)), 
+                                is_selected, 
+                                is_root, 
+                                is_editing, 
+                                &mut transient_data.text_editing.current_text, 
+                                should_focus, 
+                                first_focus, 
+                                node_color, 
+                                dotted,
+                            )
                         }
                     };
                     
