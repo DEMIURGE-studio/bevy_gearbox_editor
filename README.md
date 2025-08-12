@@ -29,8 +29,8 @@ Visual editor for bevy_gearbox state machines. Create states and transitions, ar
 
 | Crate               | Version | Bevy |
 |---------------------|---------|------|
-| bevy_gearbox        | 0.3     | 0.16 |
-| bevy_gearbox_editor | 0.3     | 0.16 |
+| bevy_gearbox        | 0.3.1   | 0.16 |
+| bevy_gearbox_editor | 0.3.1   | 0.16 |
 
 ## See also
 
