@@ -464,7 +464,7 @@ fn is_essential_component(component_name: &str) -> bool {
         // Essential for our editor
         "Name" => true,
         // State machine components that define structure
-        "StateMachineRoot" | "StateMachinePersistentData" | "StateMachineTransientData" => true,
+        "StateMachine" | "StateMachinePersistentData" | "StateMachineTransientData" => true,
         _ => false,
     }
 }

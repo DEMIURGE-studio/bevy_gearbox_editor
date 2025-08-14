@@ -8,7 +8,7 @@
 
 use bevy::prelude::*;
 use bevy_gearbox::active::Active;
-use bevy_gearbox::{InitialState, StateMachineRoot};
+use bevy_gearbox::{InitialState, StateMachine};
 use bevy_egui::egui;
 use std::collections::HashSet;
 
@@ -21,7 +21,7 @@ use crate::components::{NodeType, LeafNode, ParentNode};
 /// and parent nodes back to leaf nodes when they lose all children.
 pub fn update_node_types(
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     parent_query: Query<Entity, With<InitialState>>,
     leaf_query: Query<Entity, Without<InitialState>>,
     children_query: Query<&bevy_gearbox::StateChildren>,

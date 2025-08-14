@@ -9,8 +9,7 @@
         ]),
         "bevy_ecs::name::Name": "RepeaterTest",
         "bevy_gearbox::InitialState": (4294967328),
-        "bevy_gearbox::CurrentState": ([]),
-        "bevy_gearbox::StateMachineRoot": (),
+        "bevy_gearbox::StateMachine": ([]),
         "bevy_gearbox_editor::reflectable::ReflectableStateMachinePersistentData": (
           nodes: {
             4294967329: (

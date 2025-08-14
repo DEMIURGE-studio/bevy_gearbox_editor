@@ -242,7 +242,7 @@ impl ReflectableStateMachinePersistentData {
 
             // Include any transition edge entities referenced by this state's Transitions component
             if let Some(transitions) = world.get::<EdgeTransitions>(entity) {
-                for &edge in transitions.get_transitions() {
+                for &edge in transitions.into_iter() {
                     if world.entities().contains(edge) && !entities.contains(&edge) {
                         entities.push(edge);
                     }

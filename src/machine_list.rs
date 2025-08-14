@@ -6,7 +6,7 @@
 //! - Selecting machines for editing
 
 use bevy::prelude::*;
-use bevy_gearbox::StateMachineRoot;
+use bevy_gearbox::StateMachine;
 use bevy_egui::egui;
 
 use crate::editor_state::EditorState;
@@ -15,7 +15,7 @@ use crate::editor_state::EditorState;
 pub fn show_machine_list(
     ctx: &egui::Context,
     editor_state: &mut EditorState,
-    state_machines: &Query<(Entity, Option<&Name>), With<StateMachineRoot>>,
+    state_machines: &Query<(Entity, Option<&Name>), With<StateMachine>>,
     commands: &mut Commands,
 ) {
     egui::CentralPanel::default().show(ctx, |ui| {
@@ -41,7 +41,7 @@ pub fn show_machine_list(
         if ui.button("Create New State Machine").clicked() {
             // For now, create with default name - could add a dialog later
             let new_entity = commands.spawn((
-                StateMachineRoot,
+                StateMachine::new(),
                 Name::new("New Machine"),
             )).id();
             

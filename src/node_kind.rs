@@ -1,7 +1,6 @@
 //! Editor-internal NodeKind state machines (Leaf | Parent | Parallel) per state entity
 //! Uses bevy_gearbox to dogfood state handling for editor policies.
 
-use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::transitions::{Source, Target, TransitionListener};
@@ -51,7 +50,7 @@ pub struct MakeLeafClicked;
 pub fn sync_node_kind_machines(
     editor_state: Res<EditorState>,
     mut commands: Commands,
-    mut state_machines: Query<(&StateMachinePersistentData, &mut crate::editor_state::StateMachineTransientData), With<StateMachineRoot>>,    
+    mut state_machines: Query<(&StateMachinePersistentData, &mut crate::editor_state::StateMachineTransientData), With<StateMachine>>,    
 ) {
     let Some(root) = editor_state.selected_machine else { return; };
     let Ok((persistent, mut transient)) = state_machines.get_mut(root) else { return; };
@@ -70,8 +69,7 @@ pub fn sync_node_kind_machines(
                 NodeKindRoot,
                 NodeKindFor(state_entity),
                 InitialState(leaf),
-                CurrentState(HashSet::new()),
-                StateMachineRoot,
+                StateMachine::new(),
             ))
             .id();
 
@@ -223,7 +221,7 @@ pub fn on_enter_nodekind_state_parent_via_make_parent(
 pub fn on_remove_state_children(
     trigger: Trigger<OnRemove, bevy_gearbox::StateChildren>,
     editor_state: Res<EditorState>,
-    mut q: Query<&mut crate::editor_state::StateMachineTransientData, With<StateMachineRoot>>,
+    mut q: Query<&mut crate::editor_state::StateMachineTransientData, With<StateMachine>>,
     mut commands: Commands,
 ) {
     let parent = trigger.target();

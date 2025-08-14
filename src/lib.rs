@@ -6,7 +6,7 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContext, EguiPlugin};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
-use bevy_gearbox::{StateMachineRoot, InitialState};
+use bevy_gearbox::{StateMachine, InitialState};
 use bevy_gearbox::transitions::{Target, Source, TransitionKind, AlwaysEdge};
 use bevy_ecs::schedule::ScheduleLabel;
 use bevy_gearbox::transitions::transition_listener;
@@ -106,8 +106,8 @@ impl Plugin for GearboxEditorPlugin {
 fn editor_ui_system(
     mut editor_context: Query<&mut EguiContext, (With<EditorWindow>, Without<bevy_egui::PrimaryEguiContext>)>,
     mut editor_state: ResMut<EditorState>,
-    mut state_machines: Query<(Entity, Option<&Name>, Option<&mut StateMachinePersistentData>, Option<&mut StateMachineTransientData>), With<StateMachineRoot>>,
-    machine_list_query: Query<(Entity, Option<&Name>), With<StateMachineRoot>>,
+    mut state_machines: Query<(Entity, Option<&Name>, Option<&mut StateMachinePersistentData>, Option<&mut StateMachineTransientData>), With<StateMachine>>,
+    machine_list_query: Query<(Entity, Option<&Name>), With<StateMachine>>,
     all_entities: Query<(Entity, Option<&Name>, Option<&InitialState>)>,
     child_of_query: Query<&bevy_gearbox::StateChildOf>,
     children_query: Query<&bevy_gearbox::StateChildren>,
@@ -209,7 +209,7 @@ fn editor_ui_system(
 fn handle_transition_creation_request(
     trigger: Trigger<TransitionCreationRequested>,
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
     type_registry: Res<AppTypeRegistry>,
 ) {
     let event = trigger.event();
@@ -234,7 +234,7 @@ fn handle_transition_creation_request(
 fn handle_create_transition(
     trigger: Trigger<CreateTransition>,
     editor_state: Res<EditorState>,
-    mut state_machines: Query<(&mut StateMachineTransientData, &mut StateMachinePersistentData), With<StateMachineRoot>>,
+    mut state_machines: Query<(&mut StateMachineTransientData, &mut StateMachinePersistentData), With<StateMachine>>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
@@ -423,7 +423,7 @@ fn handle_save_state_machine(
 /// Observer to handle transition deletion requests
 fn handle_delete_transition(
     trigger: Trigger<DeleteTransition>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     child_of_query: Query<&bevy_gearbox::StateChildOf>,
     mut commands: Commands,
 ) {
@@ -500,7 +500,7 @@ fn handle_delete_transition(
 /// Observer to handle transition events and create pulse animations
 fn handle_transition_pulse(
     trigger: Trigger<bevy_gearbox::Transition>,
-    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
     edge_target_query: Query<&Target>,
 ) {
     let event = trigger.event();
@@ -516,7 +516,7 @@ fn handle_transition_pulse(
 
 /// System to update transition pulse timers and remove expired pulses
 fn update_transition_pulses(
-    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
     time: Res<Time>,
 ) {
     for mut transient_data in state_machines.iter_mut() {
@@ -533,7 +533,7 @@ fn update_transition_pulses(
 /// Observer to handle node deletion with all edge cases
 fn handle_delete_node(
     trigger: Trigger<DeleteNode>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     child_of_query: Query<&ChildOf>,
     state_child_of_query: Query<&bevy_gearbox::StateChildOf>,
     children_query: Query<&Children>,
@@ -585,7 +585,7 @@ fn handle_delete_node(
 /// Ensure `Source`/`Target` on edge entities match the editor's visual model.
 /// This provides a robust post-load correction in case scene entity mapping missed a reference.
 fn fix_edge_endpoints_from_visual_model(
-    state_machines: Query<&StateMachinePersistentData, With<StateMachineRoot>>,
+    state_machines: Query<&StateMachinePersistentData, With<StateMachine>>,
     mut commands: Commands,
 ) {
     for persistent in state_machines.iter() {

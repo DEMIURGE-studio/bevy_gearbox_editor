@@ -7,7 +7,7 @@
 //! - Managing InitialState components for parent entities
 
 use bevy::prelude::*;
-use bevy_gearbox::StateMachineRoot;
+use bevy_gearbox::StateMachine;
 use std::collections::{HashMap, HashSet};
 
 use crate::editor_state::{EditorState, NodeDragged};
@@ -21,7 +21,7 @@ use crate::StateMachinePersistentData;
 pub fn handle_parent_child_movement(
     trigger: Trigger<NodeDragged>,
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     child_of_query: Query<(Entity, &bevy_gearbox::StateChildOf)>,
     mut commands: Commands,
 ) {
@@ -77,7 +77,7 @@ pub fn handle_parent_child_movement(
 /// but can move right and down freely (which will trigger parent expansion).
 pub fn constrain_children_to_parents(
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     child_of_query: Query<(Entity, &bevy_gearbox::StateChildOf)>,
 ) {
     let Some(selected_machine) = editor_state.selected_machine else {
@@ -185,7 +185,7 @@ fn constrain_child_to_parent(
 /// This uses a bottom-up approach, processing leaf nodes first, then their parents.
 pub fn recalculate_parent_sizes(
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachineRoot>>,
+    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     children_query: Query<&bevy_gearbox::StateChildren>,
     child_of_query: Query<&bevy_gearbox::StateChildOf>,
 ) {

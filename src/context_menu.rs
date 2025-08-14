@@ -6,7 +6,7 @@
 //! - Entity creation and hierarchy management
 
 use bevy::prelude::*;
-use bevy_gearbox::{StateMachineRoot};
+use bevy_gearbox::{StateMachine};
 use bevy_egui::egui;
 
 use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested, TransitionContextMenuRequested, DeleteTransition, DeleteNode, SetInitialStateRequested};
@@ -48,7 +48,7 @@ pub fn handle_node_action(
     trigger: Trigger<NodeActionTriggered>,
     mut commands: Commands,
     mut editor_state: ResMut<EditorState>,
-    mut state_machines: Query<(&mut StateMachinePersistentData, &mut StateMachineTransientData), With<StateMachineRoot>>,
+    mut state_machines: Query<(&mut StateMachinePersistentData, &mut StateMachineTransientData), With<StateMachine>>,
     name_query: Query<&Name>,
 ) {
     let event = trigger.event();
