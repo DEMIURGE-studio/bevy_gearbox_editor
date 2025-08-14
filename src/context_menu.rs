@@ -6,8 +6,6 @@
 //! - Entity creation and hierarchy management
 
 use bevy::prelude::*;
-// use bevy::ecs::reflect::ReflectComponent;
-// use bevy::prelude::AppTypeRegistry;
 use bevy_gearbox::{StateMachineRoot};
 use bevy_egui::egui;
 

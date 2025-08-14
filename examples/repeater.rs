@@ -62,7 +62,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // For now, we spawn a placeholder entity that will eventually
     // be the root of the state machine loaded from a scene.
     commands.spawn((
-        Name::new("StateMachineRoot (from scene)"),
+        Name::new("State machine (from scene)"),
         // This component will eventually be replaced by the SceneSpawner
         // logic that loads our asset.
         DynamicSceneRoot(asset_server.load("repeatertest.scn.ron")),
@@ -90,7 +90,6 @@ fn input_system(
 fn repeater_system(
     mut repeater_query: Query<(Entity, &mut Repeater), With<Active>>,
     child_of_query: Query<&bevy_gearbox::StateChildOf>,
-    root_query: Query<&StateMachineRoot>,
     time: Res<Time>,
     mut commands: Commands,
 ) {
@@ -103,7 +102,7 @@ fn repeater_system(
                 repeater.remaining -= 1;
             }
 
-            let root_entity = child_of_query.iter_ancestors(entity).find(|parent| root_query.contains(*parent)).unwrap_or(entity);
+            let root_entity = child_of_query.root_ancestor(entity);
 
             if repeater.remaining == 0 {
                 // The repeater is done. Fire the `OnComplete` event on the `Repeating`
