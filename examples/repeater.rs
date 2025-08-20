@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy::reflect::Reflect;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::GearboxPlugin;
-use bevy_gearbox::transitions::{Source, Target, TransitionListener, TransitionKind, AlwaysEdge, After};
+use bevy_gearbox::transitions::TransitionListener;
 
 fn main() {
     App::new()
