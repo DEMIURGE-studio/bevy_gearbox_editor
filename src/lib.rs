@@ -21,7 +21,7 @@ mod entity_inspector;
 mod machine_list;
 pub mod components;
 pub mod reflectable;
-mod node_kind;
+pub mod node_kind;
 
 // Re-exports
 pub use editor_state::*;
@@ -64,10 +64,11 @@ impl Plugin for GearboxEditorPlugin {
                 hierarchy::constrain_children_to_parents,
                 hierarchy::recalculate_parent_sizes,
                 update_transition_pulses,
+                update_node_pulses,
                 reflectable::sync_reflectable_on_persistent_change,
             ).chain())
-            // Edge target/source consistency fix-up based on the editor's visual model
-            .add_systems(Update, fix_edge_endpoints_from_visual_model)
+            // Sync visuals from ECS edges lifecycle/changes
+            .add_systems(Update, sync_edge_endpoints_system)
             // NodeKind dogfood state machines (per selected machine)
             .add_systems(Update, node_kind::sync_node_kind_machines)
             // NodeKind event listeners
@@ -96,8 +97,11 @@ impl Plugin for GearboxEditorPlugin {
             .add_observer(handle_save_state_machine)
             .add_observer(reflectable::on_add_reflectable_state_machine)
             .add_observer(handle_transition_pulse)
+            .add_observer(handle_node_enter_pulse)
             .add_observer(handle_delete_transition)
-            .add_observer(handle_delete_node);
+            .add_observer(handle_delete_node)
+            .add_observer(on_add_edge)
+            .add_observer(on_remove_edge);
     }
 }
 
@@ -432,7 +436,6 @@ fn handle_delete_transition(
     // Find the state machine root that contains the source entity
     let root = child_of_query.root_ancestor(event.source_entity);
     
-    
     // Remove the visual transition from persistent data
     if let Ok(mut persistent_data) = state_machines.get_mut(root) {
         let initial_count = persistent_data.visual_transitions.len();
@@ -530,72 +533,154 @@ fn update_transition_pulses(
     }
 }
 
+/// Observer to track EnterState events and create node pulses
+fn handle_node_enter_pulse(
+    trigger: Trigger<bevy_gearbox::EnterState>,
+    child_of_query: Query<&bevy_gearbox::StateChildOf>,
+    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
+) {
+    let state = trigger.target();
+    let root = child_of_query.root_ancestor(state);
+    if let Ok(mut transient) = state_machines.get_mut(root) {
+        transient.node_pulses.push(NodePulse::new(state));
+    }
+}
+
+/// System to update node pulse timers and remove expired pulses
+fn update_node_pulses(
+    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
+    time: Res<Time>,
+) {
+    for mut transient in state_machines.iter_mut() {
+        for pulse in transient.node_pulses.iter_mut() {
+            pulse.timer.tick(time.delta());
+        }
+        transient.node_pulses.retain(|p| !p.timer.finished());
+    }
+}
+
 /// Observer to handle node deletion with all edge cases
 fn handle_delete_node(
     trigger: Trigger<DeleteNode>,
     mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
-    child_of_query: Query<&ChildOf>,
     state_child_of_query: Query<&bevy_gearbox::StateChildOf>,
-    children_query: Query<&Children>,
-    initial_state_query: Query<&InitialState>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
     let entity_to_delete = event.entity;
-    
+
     // Find the state machine root that contains this entity
     let root = state_child_of_query.root_ancestor(entity_to_delete);
-    
+
     // Don't allow deleting the root state machine itself
     if entity_to_delete == root {
         warn!("⚠️ Cannot delete the root state machine entity {:?}", entity_to_delete);
         return;
     }
-    
+
     let Ok(mut persistent_data) = state_machines.get_mut(root) else {
         warn!("⚠️ Could not find persistent data for state machine root {:?}", root);
         return;
     };
-    
-    // Collect all entities to be deleted (the entity and all its descendants)
-    let mut entities_to_delete = Vec::new();
-    collect_entities_recursively(entity_to_delete, &children_query, &mut entities_to_delete);
-    
-    // Step 1: Remove all transitions involving any of the entities to be deleted
-    remove_transitions_for_entities(&entities_to_delete, &mut persistent_data, &mut commands);
-    
-    // Step 2: Handle parent state changes if needed
-    if let Some(child_of) = child_of_query.get(entity_to_delete).ok() {
-        let parent_entity = child_of.0;
-        handle_parent_state_changes(parent_entity, entity_to_delete, &entities_to_delete, 
-                                   &children_query, &initial_state_query, &mut commands);
+
+    // Only remove transitions that TARGET the selected node
+    let incoming_to_deleted: Vec<_> = persistent_data
+        .visual_transitions
+        .iter()
+        .filter(|t| t.target_entity == entity_to_delete)
+        .cloned()
+        .collect();
+
+    for t in incoming_to_deleted {
+        commands.trigger(DeleteTransition {
+            source_entity: t.source_entity,
+            target_entity: t.target_entity,
+            event_type: t.event_type.clone(),
+        });
     }
-    
-    // Step 3: Remove visual data for all deleted entities
-    for entity in &entities_to_delete {
-        persistent_data.nodes.remove(entity);
-    }
-    
-    // Step 4: Actually delete the entities
-    for entity in entities_to_delete {
-        commands.entity(entity).despawn();
-    }
+
+    // Remove the visual node for the deleted entity only
+    persistent_data.nodes.remove(&entity_to_delete);
+
+    // Despawn only the selected entity. Children and source transitions will be cleaned up by relationships.
+    commands.entity(entity_to_delete).despawn();
 }
 
 /// Ensure `Source`/`Target` on edge entities match the editor's visual model.
 /// This provides a robust post-load correction in case scene entity mapping missed a reference.
-fn fix_edge_endpoints_from_visual_model(
-    state_machines: Query<&StateMachinePersistentData, With<StateMachine>>,
-    mut commands: Commands,
+// --- Visuals derived from ECS edges ---
+
+/// When a Source is added to an edge, if it also has a Target, create a visual transition entry
+fn on_add_edge(
+    trigger: Trigger<OnAdd, Source>,
+    sources: Query<&Source>,
+    targets: Query<&Target>,
+    always_q: Query<(), With<AlwaysEdge>>,
+    child_of_q: Query<&bevy_gearbox::StateChildOf>,
+    mut machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
 ) {
-    for persistent in state_machines.iter() {
-        for t in &persistent.visual_transitions {
-            // If the edge exists, enforce endpoints from the visual model
-            // (This is idempotent and cheap)
-            commands.entity(t.edge_entity).insert((
-                Source(t.source_entity),
-                Target(t.target_entity),
-            ));
+    let edge = trigger.target();
+    let Ok(source) = sources.get(edge) else { return; };
+    let Ok(target) = targets.get(edge) else { return; };
+
+    let root = child_of_q.root_ancestor(source.0);
+    if let Ok(mut persistent) = machines.get_mut(root) {
+        if persistent.visual_transitions.iter().any(|t| t.edge_entity == edge) {
+            return;
+        }
+
+        let source_rect = persistent.nodes.get(&source.0).map(|n| n.current_rect());
+        let target_rect = persistent.nodes.get(&target.0).map(|n| n.current_rect());
+        let (source_rect, target_rect) = match (source_rect, target_rect) {
+            (Some(s), Some(t)) => (s, t),
+            _ => return,
+        };
+
+        let midpoint = egui::Pos2::new(
+            (source_rect.center().x + target_rect.center().x) / 2.0,
+            (source_rect.center().y + target_rect.center().y) / 2.0,
+        );
+
+        let event_type = if always_q.get(edge).is_ok() { "Always".to_string() } else { "Event".to_string() };
+
+        persistent.visual_transitions.push(TransitionConnection {
+            source_entity: source.0,
+            edge_entity: edge,
+            target_entity: target.0,
+            event_type,
+            source_rect,
+            target_rect,
+            event_node_position: midpoint,
+            is_dragging_event_node: false,
+            event_node_offset: egui::Vec2::ZERO,
+        });
+    }
+}
+
+/// When a Source is removed (edge despawn), remove the visual entry
+fn on_remove_edge(
+    trigger: Trigger<OnRemove, Source>,
+    mut machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
+) {
+    let edge = trigger.target();
+    for mut persistent in machines.iter_mut() {
+        persistent.visual_transitions.retain(|t| t.edge_entity != edge);
+    }
+}
+
+/// Keep visual endpoints in sync if Source or Target changes on an existing edge
+fn sync_edge_endpoints_system(
+    mut machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
+    child_of_q: Query<&bevy_gearbox::StateChildOf>,
+    changed_edges: Query<(Entity, &Source, &Target), Or<(Changed<Source>, Changed<Target>)>>,
+) {
+    for (edge, source, target) in &changed_edges {
+        let root = child_of_q.root_ancestor(source.0);
+        if let Ok(mut persistent) = machines.get_mut(root) {
+            if let Some(vt) = persistent.visual_transitions.iter_mut().find(|t| t.edge_entity == edge) {
+                vt.source_entity = source.0;
+                vt.target_entity = target.0;
+            }
         }
     }
 }
@@ -616,98 +701,4 @@ fn handle_set_initial_state_request(
             warn!("⚠️ SetInitialStateRequested: entity {:?} has no StateChildOf parent", child);
         }
     });
-}
-
-/// Recursively collect all entities in a hierarchy
-fn collect_entities_recursively(
-    entity: Entity,
-    children_query: &Query<&Children>,
-    entities: &mut Vec<Entity>,
-) {
-    entities.push(entity);
-    
-    if let Ok(children) = children_query.get(entity) {
-        for &child in children {
-            collect_entities_recursively(child, children_query, entities);
-        }
-    }
-}
-
-/// Remove all transitions (both incoming and outgoing) for the given entities
-fn remove_transitions_for_entities(
-    entities_to_delete: &[Entity],
-    persistent_data: &mut StateMachinePersistentData,
-    commands: &mut Commands,
-) {
-    // Collect transitions that need to be deleted (involving any of the entities to be deleted)
-    let transitions_to_delete: Vec<_> = persistent_data.visual_transitions
-        .iter()
-        .filter(|transition| {
-            entities_to_delete.contains(&transition.source_entity) || 
-            entities_to_delete.contains(&transition.target_entity)
-        })
-        .cloned()
-        .collect();
-    
-    // Use our existing DeleteTransition event system to handle component removal
-    for transition in transitions_to_delete {
-        // Only remove the component if the source entity is not being deleted
-        // (if it's being deleted, the component will be removed automatically)
-        if !entities_to_delete.contains(&transition.source_entity) {
-            commands.trigger(DeleteTransition {
-                source_entity: transition.source_entity,
-                target_entity: transition.target_entity,
-                event_type: transition.event_type.clone(),
-            });
-        }
-    }
-    
-    // Remove visual transitions involving deleted entities
-    persistent_data.visual_transitions.retain(|transition| {
-        let should_keep = !entities_to_delete.contains(&transition.source_entity) && 
-                         !entities_to_delete.contains(&transition.target_entity);
-        should_keep
-    });
-}
-
-
-
-/// Handle changes to parent states when children are deleted
-fn handle_parent_state_changes(
-    parent_entity: Entity,
-    _deleted_entity: Entity,
-    all_deleted_entities: &[Entity],
-    children_query: &Query<&Children>,
-    initial_state_query: &Query<&InitialState>,
-    commands: &mut Commands,
-) {
-    // Get remaining children after deletion
-    let remaining_children: Vec<Entity> = if let Ok(children) = children_query.get(parent_entity) {
-        let mut remaining = Vec::new();
-        for &child in children {
-            if !all_deleted_entities.contains(&child) {
-                remaining.push(child);
-            }
-        }
-        remaining
-    } else {
-        Vec::new()
-    };
-    
-    // Case 1: No children left - convert parent to leaf by removing InitialState
-    if remaining_children.is_empty() {
-        commands.entity(parent_entity).remove::<InitialState>();
-        return;
-    }
-    
-    // Case 2: Check if we deleted the initial state
-    let current_initial_state = initial_state_query.get(parent_entity).ok().map(|is| is.0);
-    
-    if let Some(initial_state_entity) = current_initial_state {
-        if all_deleted_entities.contains(&initial_state_entity) {
-            // The initial state was deleted, assign a new one
-            let new_initial_state = remaining_children[0]; // Pick the first remaining child
-            commands.entity(parent_entity).insert(InitialState(new_initial_state));
-        }
-    }
 }

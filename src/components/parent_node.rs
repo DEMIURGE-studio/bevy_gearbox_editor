@@ -269,7 +269,7 @@ impl ParentNode {
             );
         }
         
-        // Title bar background: use custom_color (gold) if active, otherwise slightly darker normal
+        // Title bar background: use custom_color (gold/bright gold) if active, otherwise slightly darker normal
         let title_bg_color = if let Some(active_color) = custom_color {
             active_color
         } else {
@@ -302,13 +302,8 @@ impl ParentNode {
             egui::Stroke::new(1.0, self.entity_node.border_color),
         );
         
-        // Determine text color based on title bar background color
-        let text_color = if title_bg_color == egui::Color32::from_rgb(255, 215, 0) {
-            // If title bar background is gold (active), use black text
-            egui::Color32::BLACK
-        } else {
-            self.entity_node.text_color
-        };
+        // Determine text color based on title bar background color (smooth interpolation)
+        let text_color = crate::editor_state::compute_text_color_for_bg(title_bg_color);
         
         // Draw title text (name and entity ID side by side)
         let font_id = self.entity_node.main_font_id();
@@ -324,7 +319,7 @@ impl ParentNode {
         // Draw entity ID if provided (to the right of the name)
         if let Some(entity_id) = entity_id {
             let entity_font_id = self.entity_node.subscript_font_id();
-            let entity_id_color = if text_color == egui::Color32::BLACK {
+            let entity_id_color = if crate::editor_state::prefers_dark_text(text_color) {
                 Color32::from_rgba_unmultiplied(0, 0, 0, 180) // Semi-transparent black
             } else {
                 Color32::from_rgba_unmultiplied(255, 255, 255, 180) // Semi-transparent white

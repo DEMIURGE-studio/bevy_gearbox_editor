@@ -47,14 +47,9 @@ impl LeafNode {
         custom_color: Option<egui::Color32>,
         dotted_border: bool,
     ) -> NodeResponse {
-        // Determine text color based on background color
+        // Determine text color based on background color using smooth interpolation
         let text_color = if let Some(bg_color) = custom_color {
-            // If background is gold (active), use black text
-            if bg_color == egui::Color32::from_rgb(255, 215, 0) {
-                egui::Color32::BLACK
-            } else {
-                self.entity_node.text_color
-            }
+            crate::editor_state::compute_text_color_for_bg(bg_color)
         } else {
             self.entity_node.text_color
         };
@@ -65,7 +60,7 @@ impl LeafNode {
         
         let subscript_galley = entity_id.map(|id| {
             let subscript_font_id = self.entity_node.subscript_font_id();
-            let subscript_color = if text_color == egui::Color32::BLACK {
+            let subscript_color = if crate::editor_state::prefers_dark_text(text_color) {
                 egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180) // Semi-transparent black
             } else {
                 egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180) // Semi-transparent white

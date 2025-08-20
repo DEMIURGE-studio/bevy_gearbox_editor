@@ -12,7 +12,7 @@ use bevy_gearbox::{InitialState, StateMachine};
 use bevy_egui::egui;
 use std::collections::HashSet;
 
-use crate::editor_state::{EditorState, StateMachinePersistentData, StateMachineTransientData, NodeDragged, NodeContextMenuRequested, TransitionContextMenuRequested, RenderItem, get_entity_name, should_get_selection_boost, TransitionCreationRequested, CreateTransition, SaveStateMachine, draw_arrow, draw_interactive_pill_label, closest_point_on_rect_edge, get_node_color, get_transition_color};
+use crate::editor_state::{EditorState, StateMachinePersistentData, StateMachineTransientData, NodeDragged, NodeContextMenuRequested, TransitionContextMenuRequested, RenderItem, get_entity_name, should_get_selection_boost, TransitionCreationRequested, CreateTransition, SaveStateMachine, draw_arrow, draw_interactive_pill_label, closest_point_on_rect_edge, get_node_display_color, get_transition_color};
 use crate::components::{NodeType, LeafNode, ParentNode};
 
 /// System to update node types based on entity hierarchy
@@ -160,8 +160,8 @@ pub fn show_machine_editor(
                     
                     let first_focus = transient_data.text_editing.first_focus;
                     
-                    // Determine node color based on active state
-                    let node_color = Some(get_node_color(entity, active_query));
+                    // Determine node color (active solid gold, else gold->grey pulse)
+                    let node_color = Some(get_node_display_color(entity, active_query, &transient_data.node_pulses));
                     
                     let response = match node {
                         NodeType::Leaf(leaf_node) => {

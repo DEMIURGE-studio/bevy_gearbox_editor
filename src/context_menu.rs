@@ -132,6 +132,12 @@ pub fn handle_node_action(
             let child_entity = event.entity;
             commands.trigger(SetInitialStateRequested { child_entity });
         }
+        NodeAction::ResetMachine => {
+            // Call into core: fire ResetMachine on the selected machine root
+            if let Some(root) = editor_state.selected_machine {
+                commands.trigger_targets(bevy_gearbox::ResetMachine, root);
+            }
+        }
         NodeAction::Delete => {
             // Trigger the delete node event
             commands.trigger(DeleteNode {
@@ -206,8 +212,14 @@ pub fn render_context_menu(
                             }
                         }
 
-                        // Parent-specific: Make Parallel, Make Leaf, Add child
+                        // Parent-specific: Make Parallel, Make Leaf, Add child, Reset
                         if is_parent {
+                            if ui.button("↺ Reset Machine").clicked() {
+                                commands.trigger(NodeActionTriggered { entity, action: NodeAction::ResetMachine });
+                                editor_state.context_menu_entity = None;
+                                editor_state.context_menu_position = None;
+                                ui.close_menu();
+                            }
                             if ui.button("Make Parallel").clicked() {
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeParallel });
                                 editor_state.context_menu_entity = None;

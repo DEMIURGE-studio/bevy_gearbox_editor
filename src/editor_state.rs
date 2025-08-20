@@ -177,6 +177,8 @@ pub struct StateMachineTransientData {
     pub text_editing: TextEditingState,
     /// Active transition pulses for visual feedback
     pub transition_pulses: Vec<TransitionPulse>,
+    /// Active node pulses for visual feedback (recently entered states)
+    pub node_pulses: Vec<NodePulse>,
     /// Mapping from editor state entity -> NodeKind machine root entity (editor-internal)
     pub node_kind_roots: std::collections::HashMap<Entity, Entity>,
 }
@@ -294,6 +296,7 @@ pub enum NodeAction {
     MakeParent,
     MakeLeaf,
     Delete,
+    ResetMachine,
 }
 
 /// Event fired when a node action is triggered
@@ -375,6 +378,7 @@ impl TransitionPulse {
 
 /// Colors for visual feedback
 pub const ACTIVE_STATE_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 215, 0); // Gold
+pub const BRIGHT_ACTIVE_STATE_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 245, 120); // Brighter gold
 pub const NORMAL_NODE_COLOR: egui::Color32 = egui::Color32::from_rgb(60, 60, 60); // Dark grey
 pub const TRANSITION_COLOR: egui::Color32 = egui::Color32::WHITE;
 
@@ -385,6 +389,40 @@ pub fn get_node_color(entity: Entity, active_query: &Query<&Active>) -> egui::Co
     } else {
         NORMAL_NODE_COLOR
     }
+}
+
+/// A short-lived pulse for an entered node (state), used to lerp gold->grey
+#[derive(Clone)]
+pub struct NodePulse {
+    pub entity: Entity,
+    pub timer: Timer,
+}
+
+impl NodePulse {
+    pub fn new(entity: Entity) -> Self {
+        Self { entity, timer: Timer::from_seconds(0.6, TimerMode::Once) }
+    }
+    pub fn intensity(&self) -> f32 { 1.0 - self.timer.fraction() }
+}
+
+/// Calculate the display color for a node, blending recent activity pulses
+pub fn get_node_display_color(
+    entity: Entity,
+    active_query: &Query<&Active>,
+    pulses: &[NodePulse],
+) -> egui::Color32 {
+    let is_active = active_query.contains(entity);
+    if let Some(pulse) = pulses.iter().find(|p| p.entity == entity) {
+        let t = pulse.intensity(); // 1.0 at enter, down to 0.0
+        if is_active {
+            // Recently activated and still active: lerp from bright gold to gold
+            return lerp_color(ACTIVE_STATE_COLOR, BRIGHT_ACTIVE_STATE_COLOR, t);
+        } else {
+            // Entered then became inactive quickly: flash bright then fade to grey
+            return lerp_color(BRIGHT_ACTIVE_STATE_COLOR, NORMAL_NODE_COLOR, 1.0 - t);
+        }
+    }
+    if is_active { ACTIVE_STATE_COLOR } else { NORMAL_NODE_COLOR }
 }
 
 /// Calculate the color for a transition line/pill based on pulse state
@@ -410,6 +448,30 @@ fn lerp_color(from: egui::Color32, to: egui::Color32, t: f32) -> egui::Color32 {
         ((from.g() as f32) * (1.0 - t) + (to.g() as f32) * t) as u8,
         ((from.b() as f32) * (1.0 - t) + (to.b() as f32) * t) as u8,
     )
+}
+
+/// Perceived luminance of a color (0.0-255.0 scale)
+pub fn color_luminance(c: egui::Color32) -> f32 {
+    // Rec. 709 luma approximation
+    0.2126 * c.r() as f32 + 0.7152 * c.g() as f32 + 0.0722 * c.b() as f32
+}
+
+/// Compute a smoothly interpolated text color for a given background.
+/// As background brightens from NORMAL_NODE_COLOR to BRIGHT_ACTIVE_STATE_COLOR,
+/// text lerps from white to black.
+pub fn compute_text_color_for_bg(bg: egui::Color32) -> egui::Color32 {
+    let l_bg = color_luminance(bg);
+    let l_min = color_luminance(NORMAL_NODE_COLOR);
+    let l_max = color_luminance(BRIGHT_ACTIVE_STATE_COLOR);
+    let denom = (l_max - l_min).abs().max(1.0); // avoid div by zero
+    let mut t = (l_bg - l_min) / denom;
+    t = t.clamp(0.0, 1.0);
+    lerp_color(egui::Color32::WHITE, egui::Color32::BLACK, t)
+}
+
+/// Helper to decide if text color is closer to black (for subscript contrast)
+pub fn prefers_dark_text(text: egui::Color32) -> bool {
+    color_luminance(text) < 128.0
 }
 
 /// Draw an interactive pill-shaped label for transition events
