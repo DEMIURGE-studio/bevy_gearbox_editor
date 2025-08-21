@@ -702,15 +702,16 @@ dependencies = [
 
 [[package]]
 name = "bevy_gearbox"
-version = "0.3.1"
-source = "git+https://github.com/DEMIURGE-studio/bevy_gearbox?branch=master#826d84359df79862327e13c206c02cb94e26b2ba"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b815d0a41250115f63a05baff8b10f846cb183c2b95711af51d0ffbc5dca5e12"
 dependencies = [
  "bevy",
 ]
 
 [[package]]
 name = "bevy_gearbox_editor"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "bevy",
  "bevy-inspector-egui",

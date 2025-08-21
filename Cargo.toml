@@ -1,6 +1,6 @@
 [package]
 name = "bevy_gearbox_editor"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 description = "State machine system for the bevy game engine"
 license = "MIT OR Apache-2.0"
@@ -15,7 +15,7 @@ bevy-inspector-egui = "0.32.0"
 bevy_asset = "0.16.1"
 bevy_ecs = "0.16.1"
 bevy_egui = "0.35.1"
-bevy_gearbox = { git = "https://github.com/DEMIURGE-studio/bevy_gearbox", branch = "master" }
+bevy_gearbox = "0.3.2"
 bevy_reflect = "0.16.1"
 disqualified = "1.0.0"
 egui = "0.31.1"
