@@ -71,7 +71,7 @@ pub struct TransitionCreationState {
     pub target_entity: Option<Entity>,
     /// Whether the event type dropdown is open
     pub show_event_dropdown: bool,
-    /// Available event types for TransitionListener
+    /// Available event types for EventEdge
     pub available_event_types: Vec<String>,
 }
 

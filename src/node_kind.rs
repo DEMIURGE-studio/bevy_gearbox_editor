@@ -3,7 +3,7 @@
 
 use bevy::prelude::*;
 use bevy_gearbox::prelude::*;
-use bevy_gearbox::transitions::{Source, Target, TransitionListener};
+use bevy_gearbox::transitions::{Source, Target, EventEdge};
 
 use crate::editor_state::{EditorState, StateMachinePersistentData};
 use crate::components::{NodeType, LeafNode};
@@ -80,20 +80,20 @@ pub fn sync_node_kind_machines(
 
         // Transitions
         // Leaf --(AddChildClicked|ChildAdded)--> Parent
-        commands.spawn((Source(leaf), Target(parent), TransitionListener::<AddChildClicked>::default(), NodeKindFor(state_entity)));
-        commands.spawn((Source(leaf), Target(parent), TransitionListener::<ChildAdded>::default(), NodeKindFor(state_entity)));
+        commands.spawn((Source(leaf), Target(parent), EventEdge::<AddChildClicked>::default(), NodeKindFor(state_entity)));
+        commands.spawn((Source(leaf), Target(parent), EventEdge::<ChildAdded>::default(), NodeKindFor(state_entity)));
         // Leaf/Parent --(MakeParallelClicked)--> Parallel
-        commands.spawn((Source(parent), Target(parallel), TransitionListener::<MakeParallelClicked>::default(), NodeKindFor(state_entity)));
-        commands.spawn((Source(leaf), Target(parallel), TransitionListener::<MakeParallelClicked>::default(), NodeKindFor(state_entity)));
+        commands.spawn((Source(parent), Target(parallel), EventEdge::<MakeParallelClicked>::default(), NodeKindFor(state_entity)));
+        commands.spawn((Source(leaf), Target(parallel), EventEdge::<MakeParallelClicked>::default(), NodeKindFor(state_entity)));
         // Leaf/Parallel --(MakeParentClicked)--> Parent
-        commands.spawn((Source(leaf), Target(parent), TransitionListener::<MakeParentClicked>::default(), NodeKindFor(state_entity)));
-        commands.spawn((Source(parallel), Target(parent), TransitionListener::<MakeParentClicked>::default(), NodeKindFor(state_entity)));
+        commands.spawn((Source(leaf), Target(parent), EventEdge::<MakeParentClicked>::default(), NodeKindFor(state_entity)));
+        commands.spawn((Source(parallel), Target(parent), EventEdge::<MakeParentClicked>::default(), NodeKindFor(state_entity)));
         // Parent/Parallel --(AllChildrenRemoved)--> Leaf
-        commands.spawn((Source(parent), Target(leaf), TransitionListener::<AllChildrenRemoved>::default(), NodeKindFor(state_entity)));
-        commands.spawn((Source(parallel), Target(leaf), TransitionListener::<AllChildrenRemoved>::default(), NodeKindFor(state_entity)));
+        commands.spawn((Source(parent), Target(leaf), EventEdge::<AllChildrenRemoved>::default(), NodeKindFor(state_entity)));
+        commands.spawn((Source(parallel), Target(leaf), EventEdge::<AllChildrenRemoved>::default(), NodeKindFor(state_entity)));
         // Parent/Parallel --(MakeLeafClicked)--> Leaf
-        commands.spawn((Source(parent), Target(leaf), TransitionListener::<MakeLeafClicked>::default(), NodeKindFor(state_entity)));
-        commands.spawn((Source(parallel), Target(leaf), TransitionListener::<MakeLeafClicked>::default(), NodeKindFor(state_entity)));
+        commands.spawn((Source(parent), Target(leaf), EventEdge::<MakeLeafClicked>::default(), NodeKindFor(state_entity)));
+        commands.spawn((Source(parallel), Target(leaf), EventEdge::<MakeLeafClicked>::default(), NodeKindFor(state_entity)));
 
         transient.node_kind_roots.insert(state_entity, root_entity);
     }

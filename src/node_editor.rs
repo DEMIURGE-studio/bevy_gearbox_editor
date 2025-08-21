@@ -334,7 +334,7 @@ fn render_transition_creation_ui(
                             ui.separator();
                             
                             if transient_data.transition_creation.available_event_types.is_empty() {
-                                ui.label("No TransitionListener event types found.");
+                                ui.label("No EventEdge event types found.");
                                 ui.label("Make sure event types are registered with the type registry.");
                             } else {
                                 for event_type in &transient_data.transition_creation.available_event_types.clone() {

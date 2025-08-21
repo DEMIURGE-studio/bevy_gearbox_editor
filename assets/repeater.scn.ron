@@ -1,70 +1,76 @@
 (
   resources: {},
   entities: {
-    4294967346: (
+    4294967348: (
       components: {
-        "bevy_ecs::hierarchy::ChildOf": (4294967359),
+        "bevy_ecs::hierarchy::ChildOf": (4294967356),
         "bevy_ecs::name::Name": "Repeater",
-        "bevy_gearbox::InitialState": (4294967347),
+        "bevy_gearbox::InitialState": (4294967349),
         "bevy_gearbox::StateChildren": ([
-          4294967347,
-          4294967355,
-          4294967356,
+          4294967349,
+          4294967350,
+          4294967351,
         ]),
-        "bevy_gearbox::StateMachine": ([
-          4294967347,
-        ]),
+        "bevy_gearbox::StateMachine": (
+          active: [
+            4294967349,
+            4294967348,
+          ],
+          active_leaves: [
+            4294967349,
+          ],
+        ),
         "bevy_gearbox::active::Active": (),
         "bevy_gearbox_editor::reflectable::ReflectableStateMachinePersistentData": (
           nodes: {
-            4294967355: (
-              position: (513.0, 166.0),
-              node_type: Leaf,
-            ),
-            4294967347: (
+            4294967349: (
               position: (248.0, 164.0),
               node_type: Leaf,
             ),
-            4294967356: (
-              position: (759.0, 167.0),
+            4294967350: (
+              position: (513.0, 166.0),
               node_type: Leaf,
             ),
-            4294967346: (
+            4294967348: (
               position: (200.0, 100.0),
               node_type: Parent,
+            ),
+            4294967351: (
+              position: (759.0, 167.0),
+              node_type: Leaf,
             ),
           },
           visual_transitions: [
             (
-              source_entity: 4294967356,
-              edge_entity: 4294967357,
-              target_entity: 4294967355,
+              source_entity: 4294967351,
+              edge_entity: 4294967352,
+              target_entity: 4294967350,
               event_type: "Always",
-              position: (698.7578, 158.17188),
+              position: (700.71094, 158.0),
               offset: (5.0, -31.0),
             ),
             (
-              source_entity: 4294967355,
-              edge_entity: 4294967358,
-              target_entity: 4294967356,
+              source_entity: 4294967350,
+              edge_entity: 4294967353,
+              target_entity: 4294967351,
               event_type: "OnRepeat",
-              position: (692.7578, 227.17188),
+              position: (694.71094, 227.0),
               offset: (-1.0, 38.0),
             ),
             (
-              source_entity: 4294967347,
-              edge_entity: 8589934649,
-              target_entity: 4294967355,
+              source_entity: 4294967349,
+              edge_entity: 4294967354,
+              target_entity: 4294967350,
               event_type: "CastAbility",
-              position: (426.51563, 152.17188),
+              position: (430.76563, 152.0),
               offset: (-6.0, -35.5),
             ),
             (
-              source_entity: 4294967355,
-              edge_entity: 8589934650,
-              target_entity: 4294967347,
+              source_entity: 4294967350,
+              edge_entity: 4294967355,
+              target_entity: 4294967349,
               event_type: "OnComplete",
-              position: (430.51563, 219.67188),
+              position: (434.76563, 219.5),
               offset: (-2.0, 32.0),
             ),
           ],
@@ -72,26 +78,26 @@
         "repeater::AbilityMachine": (),
       },
     ),
-    4294967347: (
+    4294967349: (
       components: {
-        "bevy_ecs::hierarchy::ChildOf": (4294967359),
+        "bevy_ecs::hierarchy::ChildOf": (4294967356),
         "bevy_ecs::name::Name": "Ready",
-        "bevy_gearbox::StateChildOf": (4294967346),
+        "bevy_gearbox::StateChildOf": (4294967348),
         "bevy_gearbox::active::Active": (),
         "bevy_gearbox::transitions::Transitions": ([
-          8589934649,
+          4294967354,
         ]),
       },
     ),
-    4294967355: (
+    4294967350: (
       components: {
-        "bevy_ecs::hierarchy::ChildOf": (4294967345),
+        "bevy_ecs::hierarchy::ChildOf": (64424509500),
         "bevy_ecs::name::Name": "Repeat",
-        "bevy_gearbox::StateChildOf": (4294967346),
+        "bevy_gearbox::StateChildOf": (4294967348),
         "bevy_gearbox::active::Inactive": (),
         "bevy_gearbox::transitions::Transitions": ([
-          4294967358,
-          8589934650,
+          4294967353,
+          4294967355,
         ]),
         "repeater::Repeater": (
           remaining: 5,
@@ -99,20 +105,20 @@
         ),
       },
     ),
-    4294967356: (
+    4294967351: (
       components: {
-        "bevy_ecs::hierarchy::ChildOf": (4294967345),
+        "bevy_ecs::hierarchy::ChildOf": (64424509500),
         "bevy_ecs::name::Name": "WaitOneSecond",
-        "bevy_gearbox::StateChildOf": (4294967346),
+        "bevy_gearbox::StateChildOf": (4294967348),
         "bevy_gearbox::active::Inactive": (),
         "bevy_gearbox::transitions::Transitions": ([
-          4294967357,
+          4294967352,
         ]),
       },
     ),
-    4294967357: (
+    4294967352: (
       components: {
-        "bevy_ecs::hierarchy::ChildOf": (4294967345),
+        "bevy_ecs::hierarchy::ChildOf": (64424509500),
         "bevy_gearbox::transitions::After": (
           duration: (
             secs: 1,
@@ -120,35 +126,37 @@
           ),
         ),
         "bevy_gearbox::transitions::AlwaysEdge": (),
-        "bevy_gearbox::transitions::Source": (4294967356),
-        "bevy_gearbox::transitions::Target": (4294967355),
-        "bevy_gearbox::transitions::TransitionKind": External,
+        "bevy_gearbox::transitions::Source": (4294967351),
+        "bevy_gearbox::transitions::Target": (4294967350),
+        "bevy_gearbox::transitions::EdgeKind": External,
       },
     ),
-    4294967358: (
+    4294967353: (
       components: {
-        "bevy_ecs::hierarchy::ChildOf": (4294967345),
-        "bevy_gearbox::transitions::Source": (4294967355),
-        "bevy_gearbox::transitions::Target": (4294967356),
-        "bevy_gearbox::transitions::TransitionKind": External,
-        "bevy_gearbox::transitions::TransitionListener<repeater::OnRepeat>": (),
+        "bevy_ecs::hierarchy::ChildOf": (64424509500),
+        "bevy_gearbox::transitions::Source": (4294967350),
+        "bevy_gearbox::transitions::Target": (4294967351),
+        "bevy_gearbox::transitions::EdgeKind": External,
+        "bevy_gearbox::transitions::EventEdge<repeater::OnRepeat>": (),
       },
     ),
-    8589934649: (
+    4294967354: (
       components: {
-        "bevy_gearbox::transitions::Source": (4294967347),
-        "bevy_gearbox::transitions::Target": (4294967355),
-        "bevy_gearbox::transitions::TransitionKind": External,
-        "bevy_gearbox::transitions::TransitionListener<repeater::CastAbility>": (),
+        "bevy_ecs::hierarchy::ChildOf": (4294967347),
+        "bevy_gearbox::transitions::Source": (4294967349),
+        "bevy_gearbox::transitions::Target": (4294967350),
+        "bevy_gearbox::transitions::EdgeKind": External,
+        "bevy_gearbox::transitions::EventEdge<repeater::CastAbility>": (),
       },
     ),
-    8589934650: (
+    4294967355: (
       components: {
-        "bevy_gearbox::transitions::Source": (4294967355),
-        "bevy_gearbox::transitions::Target": (4294967347),
-        "bevy_gearbox::transitions::TransitionKind": External,
-        "bevy_gearbox::transitions::TransitionListener<repeater::OnComplete>": (),
+        "bevy_ecs::hierarchy::ChildOf": (4294967347),
         "bevy_gearbox::transitions::ResetEdge": (Source),
+        "bevy_gearbox::transitions::Source": (4294967350),
+        "bevy_gearbox::transitions::Target": (4294967349),
+        "bevy_gearbox::transitions::EdgeKind": External,
+        "bevy_gearbox::transitions::EventEdge<repeater::OnComplete>": (),
       },
     ),
   },

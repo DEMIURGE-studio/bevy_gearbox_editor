@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy::reflect::Reflect;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::GearboxPlugin;
-use bevy_gearbox::transitions::TransitionListener;
+use bevy_gearbox::transitions::edge_event_listener;
 
 fn main() {
     App::new()
@@ -10,9 +10,9 @@ fn main() {
         .add_plugins(GearboxPlugin)
         .add_systems(Startup, setup)
         .add_systems(Update, input_system)
-        .add_observer(transition_listener::<CastAbility>)
-        .add_observer(transition_listener::<OnRepeat>)
-        .add_observer(transition_listener::<OnComplete>)
+        .add_observer(edge_event_listener::<CastAbility>)
+        .add_observer(edge_event_listener::<OnRepeat>)
+        .add_observer(edge_event_listener::<OnComplete>)
         .add_observer(on_enter_repeating_emit_events)
         .add_observer(reset_repeater)
         .add_observer(print_enter_state_messages)
@@ -21,9 +21,9 @@ fn main() {
         .register_type::<AbilityMachine>()
         .register_type::<Repeater>()
         // ResetEdge/ResetScope are provided by core
-        .register_type::<TransitionListener<CastAbility>>()
-        .register_type::<TransitionListener<OnRepeat>>()
-        .register_type::<TransitionListener<OnComplete>>()
+        .register_type::<EventEdge<CastAbility>>()
+        .register_type::<EventEdge<OnRepeat>>()
+        .register_type::<EventEdge<OnComplete>>()
         .add_plugins(bevy_gearbox_editor::GearboxEditorPlugin)
         .run();
 }
