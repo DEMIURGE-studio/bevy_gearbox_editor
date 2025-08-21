@@ -57,6 +57,7 @@ impl Plugin for GearboxEditorPlugin {
 
         // Add systems
         app.add_systems(Update, window_management::handle_editor_hotkeys)
+            .add_observer(window_management::cleanup_editor_window)
             .add_systems(EditorWindowContextPass, editor_ui_system)
             .add_systems(EditorWindowContextPass, entity_inspector::entity_inspector_system)
             .add_systems(Update, (
