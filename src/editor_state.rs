@@ -296,7 +296,7 @@ pub enum NodeAction {
     MakeParent,
     MakeLeaf,
     Delete,
-    ResetMachine,
+    ResetRegion,
 }
 
 /// Event fired when a node action is triggered

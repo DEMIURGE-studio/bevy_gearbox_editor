@@ -702,9 +702,7 @@ dependencies = [
 
 [[package]]
 name = "bevy_gearbox"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b815d0a41250115f63a05baff8b10f846cb183c2b95711af51d0ffbc5dca5e12"
+version = "0.3.3"
 dependencies = [
  "bevy",
 ]

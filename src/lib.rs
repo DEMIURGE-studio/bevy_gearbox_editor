@@ -9,7 +9,7 @@ use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use bevy_gearbox::{StateMachine, InitialState};
 use bevy_gearbox::transitions::{Target, Source, EdgeKind, AlwaysEdge};
 use bevy_ecs::schedule::ScheduleLabel;
-use bevy_gearbox::transitions::edge_event_listener;
+use bevy_gearbox::transitions::TransitionEventAppExt;
 
 // Module declarations
 mod editor_state;
@@ -40,10 +40,10 @@ pub struct GearboxEditorPlugin;
 impl Plugin for GearboxEditorPlugin {
     fn build(&self, app: &mut App) {
         // Add required plugins
-        app.add_plugins((
-            EguiPlugin::default(),
-            DefaultInspectorConfigPlugin,
-        ));
+        // app.add_plugins((
+        //     EguiPlugin::default(),
+        //     DefaultInspectorConfigPlugin,
+        // ));
 
         // Initialize resources
         app.init_resource::<EditorState>();
@@ -73,12 +73,12 @@ impl Plugin for GearboxEditorPlugin {
             // NodeKind dogfood state machines (per selected machine)
             .add_systems(Update, node_kind::sync_node_kind_machines)
             // NodeKind event listeners
-            .add_observer(edge_event_listener::<node_kind::AddChildClicked>)
-            .add_observer(edge_event_listener::<node_kind::ChildAdded>)
-            .add_observer(edge_event_listener::<node_kind::AllChildrenRemoved>)
-            .add_observer(edge_event_listener::<node_kind::MakeParallelClicked>)
-            .add_observer(edge_event_listener::<node_kind::MakeParentClicked>)
-            .add_observer(edge_event_listener::<node_kind::MakeLeafClicked>)
+            .add_event_edge::<node_kind::AddChildClicked>()
+            .add_event_edge::<node_kind::ChildAdded>()
+            .add_event_edge::<node_kind::AllChildrenRemoved>()
+            .add_event_edge::<node_kind::MakeParallelClicked>()
+            .add_event_edge::<node_kind::MakeParentClicked>()
+            .add_event_edge::<node_kind::MakeLeafClicked>()
             .add_observer(node_kind::on_enter_nodekind_state_parallel)
             .add_observer(node_kind::on_enter_nodekind_state_parent)
             .add_observer(node_kind::on_enter_nodekind_state_parent_via_make_parent)

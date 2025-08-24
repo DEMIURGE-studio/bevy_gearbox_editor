@@ -187,6 +187,8 @@ pub fn entity_inspector_system(world: &mut World) {
         let mut keep_open = true;
         egui::Window::new(format!("Inspector: {}", entity_name))
             .default_width(300.0)
+            .resizable(true)
+            .vscroll(true)
             .open(&mut keep_open)
             .show(ctx.get_mut(), |ui| {
                 if world.entities().contains(inspected_entity) {

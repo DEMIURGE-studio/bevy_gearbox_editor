@@ -132,10 +132,10 @@ pub fn handle_node_action(
             let child_entity = event.entity;
             commands.trigger(SetInitialStateRequested { child_entity });
         }
-        NodeAction::ResetMachine => {
+        NodeAction::ResetRegion => {
             // Call into core: fire ResetMachine on the selected machine root
             if let Some(root) = editor_state.selected_machine {
-                commands.trigger_targets(bevy_gearbox::ResetMachine, root);
+                commands.trigger_targets(bevy_gearbox::ResetRegion, root);
             }
         }
         NodeAction::Delete => {
@@ -189,10 +189,11 @@ pub fn render_context_menu(
                             ui.close_menu();
                         }
 
-                        // Determine type of node (Leaf/Parent/Parallel)
+                        // Determine type of node (Leaf/Parent/Parallel/Root)
                         let is_parent = all_entities.get(entity).ok().and_then(|(_,_,init)| init.map(|_|())).is_some();
                         let is_parallel = parallel_query.get(entity).is_ok();
                         let is_leaf = !is_parent && !is_parallel;
+                        let is_root = editor_state.selected_machine == Some(entity);
 
                         // Common options already added: Inspect, Rename
 
@@ -212,13 +213,25 @@ pub fn render_context_menu(
                             }
                         }
 
-                        // Parent-specific: Make Parallel, Make Leaf, Add child, Reset
-                        if is_parent {
+                        // Root-specific actions (always allow Reset on the root)
+                        if is_root {
                             if ui.button("↺ Reset Machine").clicked() {
-                                commands.trigger(NodeActionTriggered { entity, action: NodeAction::ResetMachine });
+                                commands.trigger(NodeActionTriggered { entity, action: NodeAction::ResetRegion });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
                                 ui.close_menu();
+                            }
+                        }
+
+                        // Parent-specific: Make Parallel, Make Leaf, Add child, Reset (if not already shown as root)
+                        if is_parent {
+                            if !is_root {
+                                if ui.button("↺ Reset Region").clicked() {
+                                    commands.trigger(NodeActionTriggered { entity, action: NodeAction::ResetRegion });
+                                    editor_state.context_menu_entity = None;
+                                    editor_state.context_menu_position = None;
+                                    ui.close_menu();
+                                }
                             }
                             if ui.button("Make Parallel").clicked() {
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeParallel });
@@ -242,6 +255,14 @@ pub fn render_context_menu(
 
                         // Parallel-specific: Make Leaf, Make Parent, Add child
                         if is_parallel {
+                            if !is_root {
+                                if ui.button("↺ Reset Region").clicked() {
+                                    commands.trigger(NodeActionTriggered { entity, action: NodeAction::ResetRegion });
+                                    editor_state.context_menu_entity = None;
+                                    editor_state.context_menu_position = None;
+                                    ui.close_menu();
+                                }
+                            }
                             if ui.button("Make Leaf").clicked() {
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeLeaf });
                                 editor_state.context_menu_entity = None;

@@ -2,17 +2,18 @@ use bevy::prelude::*;
 use bevy::reflect::Reflect;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::GearboxPlugin;
-use bevy_gearbox::transitions::edge_event_listener;
+use bevy_gearbox::transitions::{EventEdge, TransitionEventAppExt};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(GearboxPlugin)
+        .add_plugins(bevy_gearbox_editor::GearboxEditorPlugin)
         .add_systems(Startup, setup)
         .add_systems(Update, input_system)
-        .add_observer(edge_event_listener::<CastAbility>)
-        .add_observer(edge_event_listener::<OnRepeat>)
-        .add_observer(edge_event_listener::<OnComplete>)
+        .add_event_edge::<CastAbility>()
+        .add_event_edge::<OnRepeat>()
+        .add_event_edge::<OnComplete>()
         .add_observer(on_enter_repeating_emit_events)
         .add_observer(reset_repeater)
         .add_observer(print_enter_state_messages)
@@ -24,7 +25,6 @@ fn main() {
         .register_type::<EventEdge<CastAbility>>()
         .register_type::<EventEdge<OnRepeat>>()
         .register_type::<EventEdge<OnComplete>>()
-        .add_plugins(bevy_gearbox_editor::GearboxEditorPlugin)
         .run();
 }
 
@@ -39,8 +39,8 @@ struct OnRepeat;
 #[derive(Event, Clone, Reflect, Default)]
 struct OnComplete;
 
-#[derive(Component, Reflect)]
-#[reflect(Component)]
+#[derive(Component, Reflect, Default)]
+#[reflect(Component, Default)]
 struct AbilityMachine;
 
 // Component to attach to the Repeat state
