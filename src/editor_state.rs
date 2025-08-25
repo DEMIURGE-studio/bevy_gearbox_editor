@@ -194,7 +194,7 @@ pub struct EditorState {
     /// Position where the context menu should appear
     pub context_menu_position: Option<Pos2>,
     /// Transition for which a context menu is requested
-    pub transition_context_menu: Option<(Entity, Entity, String)>, // (source, target, event_type)
+    pub transition_context_menu: Option<(Entity, Entity, String, Entity)>, // (source, target, event_type, edge)
     /// Position where the transition context menu should appear
     pub transition_context_menu_position: Option<Pos2>,
     /// Entity currently being inspected
@@ -282,6 +282,7 @@ pub struct TransitionContextMenuRequested {
     pub source_entity: Entity,
     pub target_entity: Entity,
     pub event_type: String,
+    pub edge_entity: Entity,
     pub position: Pos2,
 }
 
@@ -339,6 +340,12 @@ pub struct DeleteTransition {
     pub source_entity: Entity,
     pub target_entity: Entity,
     pub event_type: String,
+}
+
+/// Event fired when a transition should be deleted by its edge entity
+#[derive(Event)]
+pub struct DeleteTransitionByEdge {
+    pub edge_entity: Entity,
 }
 
 /// Event fired when a node should be deleted

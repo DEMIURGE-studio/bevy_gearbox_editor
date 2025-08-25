@@ -4,8 +4,7 @@
 //! hierarchical node editing, and real-time entity inspection.
 
 use bevy::prelude::*;
-use bevy_egui::{EguiContext, EguiPlugin};
-use bevy_inspector_egui::DefaultInspectorConfigPlugin;
+use bevy_egui::EguiContext;
 use bevy_gearbox::{StateMachine, InitialState};
 use bevy_gearbox::transitions::{Target, Source, EdgeKind, AlwaysEdge};
 use bevy_ecs::schedule::ScheduleLabel;
@@ -68,8 +67,8 @@ impl Plugin for GearboxEditorPlugin {
                 update_node_pulses,
                 reflectable::sync_reflectable_on_persistent_change,
             ).chain())
-            // Sync visuals from ECS edges lifecycle/changes
-            .add_systems(Update, sync_edge_endpoints_system)
+            // Derive visual transitions from ECS edges each frame (preserving offsets)
+            .add_systems(Update, sync_edge_visuals_from_ecs)
             // NodeKind dogfood state machines (per selected machine)
             .add_systems(Update, node_kind::sync_node_kind_machines)
             // NodeKind event listeners
@@ -100,9 +99,8 @@ impl Plugin for GearboxEditorPlugin {
             .add_observer(handle_transition_pulse)
             .add_observer(handle_node_enter_pulse)
             .add_observer(handle_delete_transition)
-            .add_observer(handle_delete_node)
-            .add_observer(on_add_edge)
-            .add_observer(on_remove_edge);
+            .add_observer(handle_delete_transition_by_edge)
+            .add_observer(handle_delete_node);
     }
 }
 
@@ -343,7 +341,7 @@ fn create_transition_edge_entity(
 ) -> Result<(), String> {
     // Special-case: create an Always transition without a listener
     if event_type == "Always" {
-        world.entity_mut(edge_entity).insert((Source(source_entity), Target(target_entity), EdgeKind::External, AlwaysEdge));
+        world.entity_mut(edge_entity).insert((Source(source_entity), Target(target_entity), EdgeKind::External, AlwaysEdge, Name::new("Always")));
         return Ok(());
     }
     // Find the full EventEdge type path and get reflection data
@@ -386,6 +384,9 @@ fn create_transition_edge_entity(
         let mut entity_mut = world.entity_mut(edge);
         reflect_component.insert(&mut entity_mut, dynamic_struct.as_partial_reflect(), &registry);
     }
+
+    // Give the edge a human-readable name matching the selected event type
+    world.entity_mut(edge).insert(Name::new(event_type.to_string()));
 
     Ok(())
 }
@@ -607,83 +608,88 @@ fn handle_delete_node(
     commands.entity(entity_to_delete).despawn();
 }
 
-/// Ensure `Source`/`Target` on edge entities match the editor's visual model.
-/// This provides a robust post-load correction in case scene entity mapping missed a reference.
-// --- Visuals derived from ECS edges ---
-
-/// When a Source is added to an edge, if it also has a Target, create a visual transition entry
-fn on_add_edge(
-    trigger: Trigger<OnAdd, Source>,
-    sources: Query<&Source>,
-    targets: Query<&Target>,
-    always_q: Query<(), With<AlwaysEdge>>,
+/// Derive visual transitions each frame from ECS edges while preserving user offsets
+fn sync_edge_visuals_from_ecs(
+    editor_state: Res<EditorState>,
+    mut machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
+    edges_q: Query<(Entity, &Source, &Target)>,
+    names_q: Query<&Name>,
     child_of_q: Query<&bevy_gearbox::StateChildOf>,
-    mut machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
 ) {
-    let edge = trigger.target();
-    let Ok(source) = sources.get(edge) else { return; };
-    let Ok(target) = targets.get(edge) else { return; };
+    let Some(selected_root) = editor_state.selected_machine else { return; };
+    let Ok(mut persistent) = machines.get_mut(selected_root) else { return; };
 
-    let root = child_of_q.root_ancestor(source.0);
-    if let Ok(mut persistent) = machines.get_mut(root) {
-        if persistent.visual_transitions.iter().any(|t| t.edge_entity == edge) {
-            return;
-        }
+    // Build a set of current edges under this root
+    let mut seen_edges: std::collections::HashSet<Entity> = std::collections::HashSet::new();
 
-        let source_rect = persistent.nodes.get(&source.0).map(|n| n.current_rect());
-        let target_rect = persistent.nodes.get(&target.0).map(|n| n.current_rect());
-        let (source_rect, target_rect) = match (source_rect, target_rect) {
-            (Some(s), Some(t)) => (s, t),
-            _ => return,
-        };
-
-        let midpoint = egui::Pos2::new(
-            (source_rect.center().x + target_rect.center().x) / 2.0,
-            (source_rect.center().y + target_rect.center().y) / 2.0,
-        );
-
-        let event_type = if always_q.get(edge).is_ok() { "Always".to_string() } else { "Event".to_string() };
-
-        persistent.visual_transitions.push(TransitionConnection {
-            source_entity: source.0,
-            edge_entity: edge,
-            target_entity: target.0,
-            event_type,
-            source_rect,
-            target_rect,
-            event_node_position: midpoint,
-            is_dragging_event_node: false,
-            event_node_offset: egui::Vec2::ZERO,
-        });
+    // Snapshot node rects to avoid borrow conflicts
+    let mut node_rects: std::collections::HashMap<Entity, egui::Rect> = std::collections::HashMap::new();
+    for (entity, node) in &persistent.nodes {
+        node_rects.insert(*entity, node.current_rect());
     }
-}
 
-/// When a Source is removed (edge despawn), remove the visual entry
-fn on_remove_edge(
-    trigger: Trigger<OnRemove, Source>,
-    mut machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
-) {
-    let edge = trigger.target();
-    for mut persistent in machines.iter_mut() {
-        persistent.visual_transitions.retain(|t| t.edge_entity != edge);
-    }
-}
+    // Ensure each ECS edge has a visual entry; update rects and label
+    for (edge, source, target) in &edges_q {
+        if child_of_q.root_ancestor(source.0) != selected_root { continue; }
+        seen_edges.insert(edge);
 
-/// Keep visual endpoints in sync if Source or Target changes on an existing edge
-fn sync_edge_endpoints_system(
-    mut machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
-    child_of_q: Query<&bevy_gearbox::StateChildOf>,
-    changed_edges: Query<(Entity, &Source, &Target), Or<(Changed<Source>, Changed<Target>)>>,
-) {
-    for (edge, source, target) in &changed_edges {
-        let root = child_of_q.root_ancestor(source.0);
-        if let Ok(mut persistent) = machines.get_mut(root) {
-            if let Some(vt) = persistent.visual_transitions.iter_mut().find(|t| t.edge_entity == edge) {
-                vt.source_entity = source.0;
-                vt.target_entity = target.0;
+        // Compute rects if available
+        let (Some(source_rect), Some(target_rect)) = (
+            node_rects.get(&source.0).copied(),
+            node_rects.get(&target.0).copied(),
+        ) else { continue; };
+
+        // Derive display label from Name or fallback to ID
+        let label = if let Ok(n) = names_q.get(edge) { n.as_str().to_string() } else { format!("{:?}", edge) };
+
+        // Find existing visual or create a new one
+        if let Some(vt) = persistent.visual_transitions.iter_mut().find(|t| t.edge_entity == edge) {
+            vt.source_entity = source.0;
+            vt.target_entity = target.0;
+            vt.source_rect = source_rect;
+            vt.target_rect = target_rect;
+            vt.event_type = label;
+            if !vt.is_dragging_event_node {
+                vt.update_event_node_position();
             }
+        } else {
+            let midpoint = egui::Pos2::new(
+                (source_rect.center().x + target_rect.center().x) / 2.0,
+                (source_rect.center().y + target_rect.center().y) / 2.0,
+            );
+            persistent.visual_transitions.push(TransitionConnection {
+                source_entity: source.0,
+                edge_entity: edge,
+                target_entity: target.0,
+                event_type: label,
+                source_rect,
+                target_rect,
+                event_node_position: midpoint,
+                is_dragging_event_node: false,
+                event_node_offset: egui::Vec2::ZERO,
+            });
         }
     }
+
+    // Remove visuals whose edges no longer exist
+    persistent.visual_transitions.retain(|t| seen_edges.contains(&t.edge_entity));
+}
+
+/// Observer to handle transition deletion by edge entity
+fn handle_delete_transition_by_edge(
+    trigger: Trigger<DeleteTransitionByEdge>,
+    mut commands: Commands,
+) {
+    let event = trigger.event();
+    let edge = event.edge_entity;
+    commands.queue(move |world: &mut World| {
+        if world.entities().contains(edge) {
+            world.entity_mut(edge).despawn();
+            info!("✅ Removed edge {:?}", edge);
+        } else {
+            warn!("⚠️ DeleteTransitionByEdge: edge {:?} does not exist", edge);
+        }
+    });
 }
 
 /// Observer to handle SetInitialStateRequested requests

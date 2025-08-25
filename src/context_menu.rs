@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use bevy_gearbox::{StateMachine};
 use bevy_egui::egui;
 
-use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested, TransitionContextMenuRequested, DeleteTransition, DeleteNode, SetInitialStateRequested};
+use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested, TransitionContextMenuRequested, DeleteNode, SetInitialStateRequested, DeleteTransitionByEdge};
 use crate::components::{NodeType, LeafNode};
 use crate::{StateMachinePersistentData, StateMachineTransientData};
 use crate::node_kind::{AddChildClicked, MakeParallelClicked, MakeParentClicked, MakeLeafClicked};
@@ -36,7 +36,7 @@ pub fn handle_transition_context_menu_request(
     let event = trigger.event();
     
     // Store the transition context menu request in editor state for rendering
-    editor_state.transition_context_menu = Some((event.source_entity, event.target_entity, event.event_type.clone()));
+    editor_state.transition_context_menu = Some((event.source_entity, event.target_entity, event.event_type.clone(), event.edge_entity));
     editor_state.transition_context_menu_position = Some(event.position);
 }
 
@@ -325,7 +325,7 @@ pub fn render_context_menu(
     }
     
     // Render transition context menu if requested
-    if let (Some((source, target, event_type)), Some(position)) = (
+    if let (Some((source, target, event_type, edge_entity)), Some(position)) = (
         editor_state.transition_context_menu.clone(),
         editor_state.transition_context_menu_position
     ) {
@@ -359,18 +359,14 @@ pub fn render_context_menu(
                                     warn!("Inspect: missing StateMachinePersistentData on root {:?}", root);
                                     return;
                                 };
-                                if let Some(conn) = persistent.visual_transitions.iter().find(|t| t.source_entity == source && t.target_entity == target && t.event_type == event_type_clone) {
-                                    let e = conn.edge_entity;
-                                    if world.entities().contains(e) {
-                                        if let Some(mut es) = world.get_resource_mut::<EditorState>() {
-                                            es.inspected_entity = Some(e);
-                                        }
-                                        info!("Inspect: set inspected_entity to edge {:?}", e);
-                                    } else {
-                                        warn!("Inspect: stored edge_entity {:?} no longer exists", e);
+                                let e = edge_entity;
+                                if world.entities().contains(e) {
+                                    if let Some(mut es) = world.get_resource_mut::<EditorState>() {
+                                        es.inspected_entity = Some(e);
                                     }
+                                    info!("Inspect: set inspected_entity to edge {:?}", e);
                                 } else {
-                                    warn!("Inspect: no matching TransitionConnection found in visual_transitions");
+                                    warn!("Inspect: edge {:?} no longer exists", e);
                                 }
                             });
                             editor_state.transition_context_menu = None;
@@ -379,11 +375,7 @@ pub fn render_context_menu(
                         }
                         
                         if ui.button("🗑 Delete Transition").clicked() {
-                            commands.trigger(DeleteTransition {
-                                source_entity: source,
-                                target_entity: target,
-                                event_type: event_type.clone(),
-                            });
+                            commands.trigger(DeleteTransitionByEdge { edge_entity });
                             editor_state.transition_context_menu = None;
                             editor_state.transition_context_menu_position = None;
                             ui.close_menu();

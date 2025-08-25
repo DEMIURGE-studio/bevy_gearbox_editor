@@ -431,6 +431,7 @@ fn render_transition_connections(
                 source_entity: transition.source_entity,
                 target_entity: transition.target_entity,
                 event_type: transition.event_type.clone(),
+                edge_entity: transition.edge_entity,
                 position: pointer_pos,
             });
         }
