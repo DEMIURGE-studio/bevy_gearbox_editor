@@ -12,7 +12,7 @@ use bevy_gearbox::{InitialState, StateMachine};
 use bevy_egui::egui;
 use std::collections::HashSet;
 
-use crate::editor_state::{EditorState, StateMachinePersistentData, StateMachineTransientData, NodeDragged, NodeContextMenuRequested, TransitionContextMenuRequested, RenderItem, get_entity_name, should_get_selection_boost, TransitionCreationRequested, CreateTransition, SaveStateMachine, draw_arrow, draw_interactive_pill_label, closest_point_on_rect_edge, get_node_display_color, get_transition_color};
+use crate::editor_state::{EditorState, StateMachinePersistentData, StateMachineTransientData, NodeDragged, NodeContextMenuRequested, TransitionContextMenuRequested, RenderItem, get_entity_name, should_get_selection_boost, TransitionCreationRequested, CreateTransition, draw_arrow, draw_interactive_pill_label, closest_point_on_rect_edge, get_node_display_color, get_transition_color};
 use crate::components::{NodeType, LeafNode, ParentNode};
 
 /// System to update node types based on entity hierarchy
@@ -27,8 +27,10 @@ pub fn update_node_types(
     children_query: Query<&bevy_gearbox::StateChildren>,
     parallel_query: Query<Entity, With<bevy_gearbox::Parallel>>,
 ) {
-    if let Some(selected_root) = editor_state.selected_machine {
-        if let Ok(mut machine_data) = state_machines.get_mut(selected_root) {
+    // Update node types for all open machines
+    for open_machine in &editor_state.open_machines {
+        if let Ok(mut machine_data) = state_machines.get_mut(open_machine.entity) {
+            let selected_root = open_machine.entity;
         
         // Get all entities in the selected state machine's hierarchy
         let mut descendants: Vec<Entity> = children_query
@@ -75,19 +77,21 @@ pub fn update_node_types(
             }
         }
         
-        // Remove nodes that are no longer part of the active hierarchy
-        let valid_entities: HashSet<Entity> = descendants.into_iter().collect();
-        machine_data.nodes.retain(|entity, _| valid_entities.contains(entity));
+            // Remove nodes that are no longer part of the active hierarchy
+            let valid_entities: HashSet<Entity> = descendants.into_iter().collect();
+            machine_data.nodes.retain(|entity, _| valid_entities.contains(entity));
         }
     }
 }
 
-/// Render the node editor interface for a selected state machine
-pub fn show_machine_editor(
-    ctx: &egui::Context,
+/// Render a single state machine on the canvas (new multi-machine approach)
+pub fn show_single_machine_on_canvas(
+    ui: &mut egui::Ui,
     editor_state: &mut EditorState,
     persistent_data: &mut StateMachinePersistentData,
     transient_data: &mut StateMachineTransientData,
+    machine_entity: Entity,
+    _machine_name: &str,
     all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
     child_of_query: &Query<&bevy_gearbox::StateChildOf>,
     children_query: &Query<&bevy_gearbox::StateChildren>,
@@ -95,190 +99,225 @@ pub fn show_machine_editor(
     parallel_query: &Query<&bevy_gearbox::Parallel>,
     commands: &mut Commands,
 ) {
+    // Render the machine content directly on the canvas without any container frame
+    render_machine_content(
+        ui,
+        editor_state,
+        persistent_data,
+        transient_data,
+        machine_entity,
+        all_entities,
+        child_of_query,
+        children_query,
+        active_query,
+        parallel_query,
+        commands,
+    );
+}
+
+/// Render the node editor interface for a selected state machine (legacy single-machine approach)
+pub fn show_machine_editor(
+    ctx: &egui::Context,
+    _editor_state: &mut EditorState,
+    _persistent_data: &mut StateMachinePersistentData,
+    transient_data: &mut StateMachineTransientData,
+    _all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
+    _child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+    _children_query: &Query<&bevy_gearbox::StateChildren>,
+    _active_query: &Query<&Active>,
+    _parallel_query: &Query<&bevy_gearbox::Parallel>,
+    _commands: &mut Commands,
+) {
     egui::CentralPanel::default().show(ctx, |ui| {
         // Add back button and save button at the top
         ui.horizontal(|ui| {
             if ui.button("← Back to Machine List").clicked() {
-                editor_state.selected_machine = None;
+                // For legacy compatibility, we'll keep this but it won't do much
+                // since we're moving to the canvas approach
                 transient_data.selected_node = None;
             }
             
-            if let Some(selected_root) = editor_state.selected_machine {
-                let machine_name = get_entity_name(selected_root, all_entities);
-                ui.separator();
-                ui.label(format!("Editing: {}", machine_name));
-                
-                ui.separator();
-                if ui.button("💾 Save").clicked() {
-                    // Trigger save event
-                    commands.trigger(SaveStateMachine { entity: selected_root });
-                }
-            }
+            // Legacy single-machine display - this will be rarely used now
+            ui.label("Legacy Single Machine View");
         });
         
         ui.separator();
         
-        if let Some(selected_root) = editor_state.selected_machine {
-            // Build render queue with z-order based on hierarchy depth
-            let mut render_queue = Vec::new();
-            
-            // Get all entities in depth-first order for natural z-ordering
-            let mut hierarchy_entities: Vec<Entity> = children_query
-                .iter_descendants_depth_first(selected_root)
-                .collect();
-            hierarchy_entities.insert(0, selected_root);
-            
-            for (hierarchy_index, entity) in hierarchy_entities.iter().enumerate() {
-                if let Some(_node) = persistent_data.nodes.get(entity) {
-                    let base_z_order = hierarchy_index as i32 * 10;
-                    let selection_boost = if should_get_selection_boost(*entity, transient_data.selected_node, child_of_query) { 
-                        5 
-                    } else { 
-                        0 
-                    };
-                    
-                    render_queue.push(RenderItem {
-                        entity: *entity,
-                        z_order: base_z_order + selection_boost,
-                    });
-                }
-            }
-            
-            // Sort by z-order (lower values render first, higher values on top)
-            render_queue.sort_by_key(|item| item.z_order);
-            
-            // Render all nodes in z-order
-            for render_item in render_queue {
-                let entity = render_item.entity;
-                let entity_name = get_entity_name(entity, all_entities);
-                
-                if let Some(node) = persistent_data.nodes.get_mut(&entity) {
-                    let is_selected = transient_data.selected_node == Some(entity);
-                    let is_root = selected_root == entity;
-                    let is_editing = transient_data.text_editing.is_editing(entity);
-                    let should_focus = transient_data.text_editing.should_focus;
-                    
-                    let first_focus = transient_data.text_editing.first_focus;
-                    
-                    // Determine node color (active solid gold, else gold->grey pulse)
-                    let node_color = Some(get_node_display_color(entity, active_query, &transient_data.node_pulses));
-                    
-                    let response = match node {
-                        NodeType::Leaf(leaf_node) => {
-                            let dotted = is_direct_child_of_parallel(entity, child_of_query, parallel_query);
-                            leaf_node.show_with_border_style(
-                                ui, 
-                                &entity_name, 
-                                Some(&format!("{:?}", entity)), 
-                                is_selected, 
-                                is_editing, 
-                                &mut transient_data.text_editing.current_text, 
-                                should_focus, 
-                                first_focus, 
-                                node_color, 
-                                dotted,
-                            )
-                        }
-                        NodeType::Parent(parent_node) => {
-                            let dotted = is_direct_child_of_parallel(entity, child_of_query, parallel_query);
-                            parent_node.show_with_border_style(
-                                ui, 
-                                &entity_name, 
-                                Some(&format!("{:?}", entity)), 
-                                is_selected, 
-                                is_root, 
-                                is_editing, 
-                                &mut transient_data.text_editing.current_text, 
-                                should_focus, 
-                                first_focus, 
-                                node_color, 
-                                dotted,
-                            )
-                        }
-                    };
-                    
-                    // Clear focus flag after first frame
-                    if should_focus {
-                        transient_data.text_editing.should_focus = false;
-                    }
-                    
-                    // Clear first focus flag after it's been used
-                    if first_focus {
-                        transient_data.text_editing.first_focus = false;
-                    }
-                    
-                    // Handle selection
-                    if response.clicked {
-                        // Check if we're in transition creation mode and waiting for target selection
-                        if transient_data.transition_creation.awaiting_target_selection {
-                            let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
-                            transient_data.transition_creation.set_target(entity, pointer_pos);
-                        } else {
-                            transient_data.selected_node = Some(entity);
-                        }
-                    }
-                    
-                    // Handle + button click for transition creation (leaf nodes only)
-                    if response.add_transition_clicked {
-                        commands.trigger(TransitionCreationRequested {
-                            source_entity: entity,
-                        });
-                    }
-                    
-                    // Handle right-click context menu
-                    if response.right_clicked {
-                        let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
-                        commands.trigger(NodeContextMenuRequested {
-                            entity,
-                            position: pointer_pos,
-                        });
-                    }
-                    
-                    // Handle dragging
-                    if response.dragged {
-                        // Node was dragged - position is automatically updated in the component
-                        // Emit event to handle parent-child movement
-                        commands.trigger(NodeDragged {
-                            entity,
-                            drag_delta: response.drag_delta,
-                        });
-                    }
-                }
-            }
-            
-            // Update transition rectangles before rendering
-            update_transition_rectangles(persistent_data, child_of_query);
-            
-            // Render transition arrows after all nodes
-            render_transition_connections(ui, persistent_data, transient_data, child_of_query, commands);
-            
-            // Render initial state indicators
-            render_initial_state_indicators(ui, persistent_data, &all_entities, selected_root);
-            
-            // Handle background clicks to cancel transition creation
-            if transient_data.transition_creation.awaiting_target_selection {
-                // Check for clicks on background (not handled by any node)
-                if ui.input(|i| i.pointer.primary_clicked()) {
-                    let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
-                    let clicked_on_node = persistent_data.nodes.values().any(|node| {
-                        node.current_rect().contains(pointer_pos)
-                    });
-                    
-                    if !clicked_on_node {
-                        transient_data.transition_creation.cancel();
-                    }
-                }
-            }
-        } else {
-            ui.label("No state machine selected");
-        }
-        
-        // Handle text editing completion
-        handle_text_editing_completion(ui, transient_data, commands);
-        
-        // Render transition creation UI
-        render_transition_creation_ui(ui, persistent_data, transient_data, commands);
+        // For now, just show a message directing users to use Ctrl+O
+        ui.label("Use Ctrl+O to open the new multi-machine canvas editor.");
     });
+}
+
+/// Render the content of a state machine (nodes, transitions, etc.)
+fn render_machine_content(
+    ui: &mut egui::Ui,
+    _editor_state: &mut EditorState,
+    persistent_data: &mut StateMachinePersistentData,
+    transient_data: &mut StateMachineTransientData,
+    selected_root: Entity,
+    all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
+    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+    children_query: &Query<&bevy_gearbox::StateChildren>,
+    active_query: &Query<&Active>,
+    parallel_query: &Query<&bevy_gearbox::Parallel>,
+    commands: &mut Commands,
+) {
+    // Build render queue with z-order based on hierarchy depth
+    let mut render_queue = Vec::new();
+    
+    // Get all entities in depth-first order for natural z-ordering
+    let mut hierarchy_entities: Vec<Entity> = children_query
+        .iter_descendants_depth_first(selected_root)
+        .collect();
+    hierarchy_entities.insert(0, selected_root);
+    
+    for (hierarchy_index, entity) in hierarchy_entities.iter().enumerate() {
+        if let Some(_node) = persistent_data.nodes.get(entity) {
+            let base_z_order = hierarchy_index as i32 * 10;
+            let selection_boost = if should_get_selection_boost(*entity, transient_data.selected_node, child_of_query) { 
+                5 
+            } else { 
+                0 
+            };
+            
+            render_queue.push(RenderItem {
+                entity: *entity,
+                z_order: base_z_order + selection_boost,
+            });
+        }
+    }
+    
+    // Sort by z-order (lower values render first, higher values on top)
+    render_queue.sort_by_key(|item| item.z_order);
+    
+    // Render all nodes in z-order
+    for render_item in render_queue {
+        let entity = render_item.entity;
+        let entity_name = get_entity_name(entity, all_entities);
+        
+        if let Some(node) = persistent_data.nodes.get_mut(&entity) {
+            let is_selected = transient_data.selected_node == Some(entity);
+            let is_root = selected_root == entity;
+            let is_editing = transient_data.text_editing.is_editing(entity);
+            let should_focus = transient_data.text_editing.should_focus;
+            
+            let first_focus = transient_data.text_editing.first_focus;
+            
+            // Determine node color (active solid gold, else gold->grey pulse)
+            let node_color = Some(get_node_display_color(entity, active_query, &transient_data.node_pulses));
+            
+            let response = match node {
+                NodeType::Leaf(leaf_node) => {
+                    let dotted = is_direct_child_of_parallel(entity, child_of_query, parallel_query);
+                    leaf_node.show_with_border_style(
+                        ui, 
+                        &entity_name, 
+                        Some(&format!("{:?}", entity)), 
+                        is_selected, 
+                        is_editing, 
+                        &mut transient_data.text_editing.current_text, 
+                        should_focus, 
+                        first_focus, 
+                        node_color, 
+                        dotted,
+                    )
+                }
+                NodeType::Parent(parent_node) => {
+                    let dotted = is_direct_child_of_parallel(entity, child_of_query, parallel_query);
+                    parent_node.show_with_border_style(
+                        ui, 
+                        &entity_name, 
+                        Some(&format!("{:?}", entity)), 
+                        is_selected, 
+                        is_root, 
+                        is_editing, 
+                        &mut transient_data.text_editing.current_text, 
+                        should_focus, 
+                        first_focus, 
+                        node_color, 
+                        dotted,
+                    )
+                }
+            };
+            
+            // Clear focus flag after first frame
+            if should_focus {
+                transient_data.text_editing.should_focus = false;
+            }
+            
+            // Clear first focus flag after it's been used
+            if first_focus {
+                transient_data.text_editing.first_focus = false;
+            }
+            
+            // Handle selection
+            if response.clicked {
+                // Check if we're in transition creation mode and waiting for target selection
+                if transient_data.transition_creation.awaiting_target_selection {
+                    let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
+                    transient_data.transition_creation.set_target(entity, pointer_pos);
+                } else {
+                    transient_data.selected_node = Some(entity);
+                }
+            }
+            
+            // Handle + button click for transition creation (leaf nodes only)
+            if response.add_transition_clicked {
+                commands.trigger(TransitionCreationRequested {
+                    source_entity: entity,
+                });
+            }
+            
+            // Handle right-click context menu
+            if response.right_clicked {
+                let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
+                commands.trigger(NodeContextMenuRequested {
+                    entity,
+                    position: pointer_pos,
+                });
+            }
+            
+            // Handle dragging
+            if response.dragged {
+                // Node was dragged - position is automatically updated in the component
+                // Emit event to handle parent-child movement
+                commands.trigger(NodeDragged {
+                    entity,
+                    drag_delta: response.drag_delta,
+                });
+            }
+        }
+    }
+    
+    // Update transition rectangles before rendering
+    update_transition_rectangles(persistent_data, child_of_query);
+    
+    // Render transition arrows after all nodes
+    render_transition_connections(ui, persistent_data, transient_data, child_of_query, commands);
+    
+    // Render initial state indicators
+    render_initial_state_indicators(ui, persistent_data, &all_entities, selected_root);
+    
+    // Handle background clicks to cancel transition creation
+    if transient_data.transition_creation.awaiting_target_selection {
+        // Check for clicks on background (not handled by any node)
+        if ui.input(|i| i.pointer.primary_clicked()) {
+            let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
+            let clicked_on_node = persistent_data.nodes.values().any(|node| {
+                node.current_rect().contains(pointer_pos)
+            });
+            
+            if !clicked_on_node {
+                transient_data.transition_creation.cancel();
+            }
+        }
+    }
+    
+    // Handle text editing completion
+    handle_text_editing_completion(ui, transient_data, commands);
+    
+    // Render transition creation UI
+    render_transition_creation_ui(ui, persistent_data, transient_data, commands);
 }
 
 /// Render the transition creation dropdown UI

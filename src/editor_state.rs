@@ -183,16 +183,31 @@ pub struct StateMachineTransientData {
     pub node_kind_roots: std::collections::HashMap<Entity, Entity>,
 }
 
+/// Represents an open state machine on the canvas
+#[derive(Debug, Clone)]
+pub struct OpenMachine {
+    /// The state machine entity
+    pub entity: Entity,
+    /// Display name for the machine
+    pub display_name: String,
+    /// Canvas offset for positioning this machine
+    pub canvas_offset: egui::Vec2,
+}
+
 /// Resource that holds the editor's UI/window state
-/// This manages which state machine is being edited in each window
+/// This manages multiple state machines open on the same canvas
 #[derive(Resource, Default)]
 pub struct EditorState {
-    /// Currently selected state machine root entity being edited
-    pub selected_machine: Option<Entity>,
+    /// Multiple open machines on the canvas
+    pub open_machines: Vec<OpenMachine>,
     /// Entity for which a context menu is requested
     pub context_menu_entity: Option<Entity>,
     /// Position where the context menu should appear
     pub context_menu_position: Option<Pos2>,
+    /// Position where the background context menu should appear
+    pub background_context_menu_position: Option<Pos2>,
+    /// Whether the machine selection submenu is open
+    pub show_machine_selection_menu: bool,
     /// Transition for which a context menu is requested
     pub transition_context_menu: Option<(Entity, Entity, String, Entity)>, // (source, target, event_type, edge)
     /// Position where the transition context menu should appear
@@ -254,14 +269,50 @@ impl ComponentAdditionState {
 }
 
 impl EditorState {
-    /// Get the currently selected state machine entity
-    pub fn current_machine(&self) -> Option<Entity> {
-        self.selected_machine
+    /// Add a new machine to the canvas
+    pub fn add_machine(&mut self, entity: Entity, display_name: String) {
+        // Calculate position to avoid overlaps
+        let canvas_offset = self.calculate_next_machine_position();
+        
+        let open_machine = OpenMachine {
+            entity,
+            display_name,
+            canvas_offset,
+        };
+        
+        self.open_machines.push(open_machine);
     }
     
-    /// Set the currently selected state machine
-    pub fn set_current_machine(&mut self, entity: Option<Entity>) {
-        self.selected_machine = entity;
+    /// Remove a machine from the canvas
+    pub fn remove_machine(&mut self, entity: Entity) {
+        self.open_machines.retain(|machine| machine.entity != entity);
+    }
+    
+    /// Check if a machine is currently open
+    pub fn is_machine_open(&self, entity: Entity) -> bool {
+        self.open_machines.iter().any(|machine| machine.entity == entity)
+    }
+    
+    /// Get all open machine entities
+    pub fn get_open_machine_entities(&self) -> Vec<Entity> {
+        self.open_machines.iter().map(|machine| machine.entity).collect()
+    }
+    
+    /// Calculate the next position for a new machine to avoid overlaps
+    fn calculate_next_machine_position(&self) -> egui::Vec2 {
+        // Simple grid-based positioning
+        let machines_per_row = 2;
+        let machine_spacing = egui::Vec2::new(600.0, 400.0);
+        let start_offset = egui::Vec2::new(50.0, 50.0);
+        
+        let machine_count = self.open_machines.len();
+        let row = machine_count / machines_per_row;
+        let col = machine_count % machines_per_row;
+        
+        start_offset + egui::Vec2::new(
+            col as f32 * machine_spacing.x,
+            row as f32 * machine_spacing.y,
+        )
     }
 }
 
@@ -358,6 +409,24 @@ pub struct DeleteNode {
 #[derive(Event)]
 pub struct SetInitialStateRequested {
     pub child_entity: Entity,
+}
+
+/// Event fired when background context menu is requested
+#[derive(Event)]
+pub struct BackgroundContextMenuRequested {
+    pub position: Pos2,
+}
+
+/// Event fired when a machine should be opened on the canvas
+#[derive(Event)]
+pub struct OpenMachineRequested {
+    pub entity: Entity,
+}
+
+/// Event fired when a machine should be closed from the canvas
+#[derive(Event)]
+pub struct CloseMachineRequested {
+    pub entity: Entity,
 }
 
 /// Data to track transition pulse animation

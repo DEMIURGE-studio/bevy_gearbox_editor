@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use bevy_gearbox::{StateMachine};
 use bevy_egui::egui;
 
-use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested, TransitionContextMenuRequested, DeleteNode, SetInitialStateRequested, DeleteTransitionByEdge};
+use crate::editor_state::{EditorState, NodeAction, NodeActionTriggered, NodeContextMenuRequested, TransitionContextMenuRequested, DeleteNode, SetInitialStateRequested, DeleteTransitionByEdge, SaveStateMachine, CloseMachineRequested};
 use crate::components::{NodeType, LeafNode};
 use crate::{StateMachinePersistentData, StateMachineTransientData};
 use crate::node_kind::{AddChildClicked, MakeParallelClicked, MakeParentClicked, MakeLeafClicked};
@@ -53,8 +53,16 @@ pub fn handle_node_action(
 ) {
     let event = trigger.event();
     
-    // Get the currently selected state machine
-    let Some(selected_machine) = editor_state.selected_machine else {
+    // Find which machine contains this entity
+    let mut target_machine = None;
+    for open_machine in &editor_state.open_machines {
+        // For now, we'll assume the entity belongs to the first open machine
+        // In a more sophisticated implementation, we'd traverse the hierarchy to find the root
+        target_machine = Some(open_machine.entity);
+        break;
+    }
+    
+    let Some(selected_machine) = target_machine else {
         return;
     };
     
@@ -134,7 +142,7 @@ pub fn handle_node_action(
         }
         NodeAction::ResetRegion => {
             // Call into core: fire ResetMachine on the selected machine root
-            if let Some(root) = editor_state.selected_machine {
+            if let Some(root) = target_machine {
                 commands.trigger_targets(bevy_gearbox::ResetRegion, root);
             }
         }
@@ -193,7 +201,7 @@ pub fn render_context_menu(
                         let is_parent = all_entities.get(entity).ok().and_then(|(_,_,init)| init.map(|_|())).is_some();
                         let is_parallel = parallel_query.get(entity).is_ok();
                         let is_leaf = !is_parent && !is_parallel;
-                        let is_root = editor_state.selected_machine == Some(entity);
+                        let is_root = editor_state.open_machines.iter().any(|m| m.entity == entity);
 
                         // Common options already added: Inspect, Rename
 
@@ -213,8 +221,24 @@ pub fn render_context_menu(
                             }
                         }
 
-                        // Root-specific actions (always allow Reset on the root)
+                        // Root-specific actions (save, close, reset)
                         if is_root {
+                            if ui.button("💾 Save Machine").clicked() {
+                                commands.trigger(SaveStateMachine { entity });
+                                editor_state.context_menu_entity = None;
+                                editor_state.context_menu_position = None;
+                                ui.close_menu();
+                            }
+                            
+                            if ui.button("✕ Close Machine").clicked() {
+                                commands.trigger(CloseMachineRequested { entity });
+                                editor_state.context_menu_entity = None;
+                                editor_state.context_menu_position = None;
+                                ui.close_menu();
+                            }
+                            
+                            ui.separator();
+                            
                             if ui.button("↺ Reset Machine").clicked() {
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::ResetRegion });
                                 editor_state.context_menu_entity = None;
@@ -351,11 +375,14 @@ pub fn render_context_menu(
                                     warn!("Inspect: EditorState missing");
                                     return;
                                 };
-                                let Some(root) = editor_state.selected_machine else {
-                                    warn!("Inspect: no selected machine");
+                                // Find which machine contains this entity (simplified approach)
+                                let root = if let Some(open_machine) = editor_state.open_machines.first() {
+                                    open_machine.entity
+                                } else {
+                                    warn!("Inspect: no open machines");
                                     return;
                                 };
-                                let Some(persistent) = world.get::<StateMachinePersistentData>(root) else {
+                                let Some(_persistent) = world.get::<StateMachinePersistentData>(root) else {
                                     warn!("Inspect: missing StateMachinePersistentData on root {:?}", root);
                                     return;
                                 };

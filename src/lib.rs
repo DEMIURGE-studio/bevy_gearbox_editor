@@ -25,6 +25,9 @@ pub mod node_kind;
 // Re-exports
 pub use editor_state::*;
 
+// Import new events - these are also re-exported by the glob import above
+// but we need them explicitly for the observers
+
 // Additional imports for transition creation
 use bevy::ecs::reflect::ReflectComponent;
 use bevy::prelude::AppTypeRegistry;
@@ -100,7 +103,10 @@ impl Plugin for GearboxEditorPlugin {
             .add_observer(handle_node_enter_pulse)
             .add_observer(handle_delete_transition)
             .add_observer(handle_delete_transition_by_edge)
-            .add_observer(handle_delete_node);
+            .add_observer(handle_delete_node)
+            .add_observer(handle_background_context_menu_request)
+            .add_observer(handle_open_machine_request)
+            .add_observer(handle_close_machine_request);
     }
 }
 
@@ -122,23 +128,38 @@ fn editor_ui_system(
     if let Ok(mut egui_context) = editor_context.single_mut() {
         let ctx = egui_context.get_mut();
         
-        if let Some(selected_machine) = editor_state.selected_machine {
-            // Get the editor data for the selected machine
-            if let Ok((_, _, persistent_data_opt, transient_data_opt)) = state_machines.get_mut(selected_machine) {
-                // Ensure the machine has both components
-                let mut persistent_data = if let Some(data) = persistent_data_opt {
-                    data
-                } else {
-                    // Add the component if it doesn't exist
-                    commands.entity(selected_machine).insert(StateMachinePersistentData::default());
-                    // For this frame, create a temporary default
-                    let mut temp_persistent = StateMachinePersistentData::default();
-                    let mut temp_transient = StateMachineTransientData::default();
-                    node_editor::show_machine_editor(
-                        ctx,
+        egui::CentralPanel::default().show(ctx, |ui| {
+            // Handle background interactions first
+            handle_background_interactions(ui, &mut editor_state, &mut commands);
+            
+            // Render each open machine directly on the canvas
+            for open_machine in &editor_state.open_machines.clone() {
+                if let Ok((_, _, persistent_data_opt, transient_data_opt)) = state_machines.get_mut(open_machine.entity) {
+                    // Ensure the machine has both components
+                    if persistent_data_opt.is_none() {
+                        commands.entity(open_machine.entity).insert(StateMachinePersistentData::default());
+                        continue;
+                    }
+                    if transient_data_opt.is_none() {
+                        commands.entity(open_machine.entity).insert(StateMachineTransientData::default());
+                        continue;
+                    }
+                    
+                    let (_, _, Some(mut persistent_data), Some(mut transient_data)) = state_machines.get_mut(open_machine.entity).unwrap() else {
+                        continue;
+                    };
+                    
+                    // Apply canvas offset to all node positions before rendering
+                    apply_canvas_offset_to_nodes(&mut persistent_data, open_machine.canvas_offset);
+                    
+                    // Show the machine editor directly on the main canvas
+                    node_editor::show_single_machine_on_canvas(
+                        ui,
                         &mut editor_state,
-                        &mut temp_persistent,
-                        &mut temp_transient,
+                        &mut persistent_data,
+                        &mut transient_data,
+                        open_machine.entity,
+                        &open_machine.display_name,
                         &all_entities,
                         &child_of_query,
                         &children_query,
@@ -146,65 +167,30 @@ fn editor_ui_system(
                         &parallel_query,
                         &mut commands,
                     );
-                    return;
-                };
-                
-                let mut transient_data = if let Some(data) = transient_data_opt {
-                    data
-                } else {
-                    // Add the component if it doesn't exist
-                    commands.entity(selected_machine).insert(StateMachineTransientData::default());
-                    // For this frame, create a temporary default
-                    let mut temp_persistent = StateMachinePersistentData::default();
-                    let mut temp_transient = StateMachineTransientData::default();
-                    node_editor::show_machine_editor(
-                        ctx,
-                        &mut editor_state,
-                        &mut temp_persistent,
-                        &mut temp_transient,
-                        &all_entities,
-                        &child_of_query,
-                        &children_query,
-                        &active_query,
-                        &parallel_query,
-                        &mut commands,
-                    );
-                    return;
-                };
-                
-                // Show the node editor for the selected machine
-                node_editor::show_machine_editor(
-                    ctx,
-                    &mut editor_state,
-                    &mut persistent_data,
-                    &mut transient_data,
-                    &all_entities,
-                    &child_of_query,
-                    &children_query,
-                    &active_query,
-                    &parallel_query,
-                    &mut commands,
-                );
+                    
+                    // Remove canvas offset after rendering to keep stored positions clean
+                    remove_canvas_offset_from_nodes(&mut persistent_data, open_machine.canvas_offset);
+                }
             }
-        } else {
-            // Show the machine list
-            machine_list::show_machine_list(
+            
+            // Render context menus
+            context_menu::render_context_menu(
+                ctx,
+                &mut editor_state,
+                &mut commands,
+                &all_entities,
+                &child_of_query,
+                &parallel_query,
+            );
+            
+            // Render background context menu
+            render_background_context_menu(
                 ctx,
                 &mut editor_state,
                 &machine_list_query,
                 &mut commands,
             );
-        }
-
-        // Render context menu if requested
-        context_menu::render_context_menu(
-            ctx,
-            &mut editor_state,
-            &mut commands,
-            &all_entities,
-            &child_of_query,
-            &parallel_query,
-        );
+        });
     }
 }
 
@@ -217,8 +203,16 @@ fn handle_transition_creation_request(
 ) {
     let event = trigger.event();
     
-    // Get the currently selected state machine
-    let Some(selected_machine) = editor_state.selected_machine else {
+    // For transition creation, we need to find which machine contains the source entity
+    // For now, we'll iterate through all open machines to find the right one
+    let mut selected_machine = None;
+    for open_machine in &editor_state.open_machines {
+        // This is a simplified check - in practice we'd need to verify the entity belongs to this machine
+        selected_machine = Some(open_machine.entity);
+        break; // For now, just use the first open machine
+    }
+    
+    let Some(selected_machine) = selected_machine else {
         return;
     };
     
@@ -242,8 +236,14 @@ fn handle_create_transition(
 ) {
     let event = trigger.event();
     
-    // Get the currently selected state machine
-    let Some(selected_machine) = editor_state.selected_machine else {
+    // Find which machine contains the source entity
+    let mut selected_machine = None;
+    for open_machine in &editor_state.open_machines {
+        selected_machine = Some(open_machine.entity);
+        break; // For now, just use the first open machine
+    }
+    
+    let Some(selected_machine) = selected_machine else {
         return;
     };
     
@@ -616,8 +616,10 @@ fn sync_edge_visuals_from_ecs(
     names_q: Query<&Name>,
     child_of_q: Query<&bevy_gearbox::StateChildOf>,
 ) {
-    let Some(selected_root) = editor_state.selected_machine else { return; };
-    let Ok(mut persistent) = machines.get_mut(selected_root) else { return; };
+    // Sync edges for all open machines
+    for open_machine in &editor_state.open_machines {
+        let selected_root = open_machine.entity;
+        let Ok(mut persistent) = machines.get_mut(selected_root) else { continue; };
 
     // Build a set of current edges under this root
     let mut seen_edges: std::collections::HashSet<Entity> = std::collections::HashSet::new();
@@ -671,8 +673,9 @@ fn sync_edge_visuals_from_ecs(
         }
     }
 
-    // Remove visuals whose edges no longer exist
-    persistent.visual_transitions.retain(|t| seen_edges.contains(&t.edge_entity));
+        // Remove visuals whose edges no longer exist
+        persistent.visual_transitions.retain(|t| seen_edges.contains(&t.edge_entity));
+    }
 }
 
 /// Observer to handle transition deletion by edge entity
@@ -708,4 +711,233 @@ fn handle_set_initial_state_request(
             warn!("⚠️ SetInitialStateRequested: entity {:?} has no StateChildOf parent", child);
         }
     });
+}
+
+/// Handle background interactions for the canvas
+fn handle_background_interactions(
+    ui: &mut egui::Ui,
+    editor_state: &mut EditorState,
+    commands: &mut Commands,
+) {
+    // Check for right-click on background
+    if ui.input(|i| i.pointer.secondary_clicked()) {
+        let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
+        
+        // Check if the click was on empty space (not on any machine)
+        let clicked_on_machine = editor_state.open_machines.iter().any(|machine| {
+            let machine_rect = calculate_machine_rect(machine);
+            machine_rect.contains(pointer_pos)
+        });
+        
+        if !clicked_on_machine {
+            commands.trigger(BackgroundContextMenuRequested {
+                position: pointer_pos,
+            });
+        }
+    }
+}
+
+/// Calculate the rectangle for a machine on the canvas (for interaction detection)
+fn calculate_machine_rect(open_machine: &OpenMachine) -> egui::Rect {
+    let size = egui::Vec2::new(500.0, 350.0); // Default machine size
+    egui::Rect::from_min_size(
+        egui::Pos2::new(open_machine.canvas_offset.x, open_machine.canvas_offset.y),
+        size,
+    )
+}
+
+/// Apply canvas offset to all nodes in a state machine (for rendering)
+fn apply_canvas_offset_to_nodes(persistent_data: &mut StateMachinePersistentData, offset: egui::Vec2) {
+    for node in persistent_data.nodes.values_mut() {
+        match node {
+            crate::components::NodeType::Leaf(leaf_node) => {
+                leaf_node.entity_node.position += offset;
+            }
+            crate::components::NodeType::Parent(parent_node) => {
+                parent_node.entity_node.position += offset;
+            }
+        }
+    }
+    
+    // Also offset transition event node positions
+    for transition in persistent_data.visual_transitions.iter_mut() {
+        transition.event_node_position += offset;
+    }
+}
+
+/// Remove canvas offset from all nodes in a state machine (after rendering)
+fn remove_canvas_offset_from_nodes(persistent_data: &mut StateMachinePersistentData, offset: egui::Vec2) {
+    for node in persistent_data.nodes.values_mut() {
+        match node {
+            crate::components::NodeType::Leaf(leaf_node) => {
+                leaf_node.entity_node.position -= offset;
+            }
+            crate::components::NodeType::Parent(parent_node) => {
+                parent_node.entity_node.position -= offset;
+            }
+        }
+    }
+    
+    // Also remove offset from transition event node positions
+    for transition in persistent_data.visual_transitions.iter_mut() {
+        transition.event_node_position -= offset;
+    }
+}
+
+/// Render the background context menu
+fn render_background_context_menu(
+    ctx: &egui::Context,
+    editor_state: &mut EditorState,
+    machine_list_query: &Query<(Entity, Option<&Name>), With<StateMachine>>,
+    commands: &mut Commands,
+) {
+    if let Some(position) = editor_state.background_context_menu_position {
+        let menu_id = egui::Id::new("background_context_menu");
+        
+        egui::Area::new(menu_id)
+            .fixed_pos(position)
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.set_min_width(200.0);
+                    ui.heading("Canvas");
+                    ui.separator();
+                    
+                    if ui.button("Open State Machine").clicked() {
+                        editor_state.show_machine_selection_menu = true;
+                    }
+                    
+                    if ui.button("Create New Machine").clicked() {
+                        // Create a new state machine
+                        let new_entity = commands.spawn((
+                            StateMachine::new(),
+                            Name::new("New Machine"),
+                        )).id();
+                        
+                        commands.trigger(OpenMachineRequested { entity: new_entity });
+                        editor_state.background_context_menu_position = None;
+                    }
+                });
+            });
+        
+        // Close menu if clicked elsewhere (but not if machine selection menu is open)
+        if !editor_state.show_machine_selection_menu && ctx.input(|i| i.pointer.any_click()) {
+            let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
+            let menu_rect = egui::Rect::from_min_size(position, egui::Vec2::new(200.0, 150.0));
+            
+            if !menu_rect.contains(pointer_pos) {
+                editor_state.background_context_menu_position = None;
+            }
+        }
+    }
+    
+    // Render machine selection submenu
+    if editor_state.show_machine_selection_menu {
+        if let Some(base_position) = editor_state.background_context_menu_position {
+            let submenu_position = egui::Pos2::new(base_position.x + 210.0, base_position.y);
+            let submenu_id = egui::Id::new("machine_selection_submenu");
+            
+            egui::Area::new(submenu_id)
+                .fixed_pos(submenu_position)
+                .order(egui::Order::Foreground)
+                .show(ctx, |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.set_min_width(200.0);
+                        ui.heading("Select Machine");
+                        ui.separator();
+                        
+                        let mut found_machines = false;
+                        for (entity, name_opt) in machine_list_query.iter() {
+                            // Skip machines that are already open
+                            if editor_state.is_machine_open(entity) {
+                                continue;
+                            }
+                            
+                            // Skip internal NodeKind machines
+                            if let Some(name) = name_opt {
+                                if name.as_str() == "NodeKind" {
+                                    continue;
+                                }
+                            }
+                            
+                            found_machines = true;
+                            let display_name = if let Some(name) = name_opt {
+                                name.as_str().to_string()
+                            } else {
+                                format!("Unnamed Machine")
+                            };
+                            
+                            if ui.button(&display_name).clicked() {
+                                commands.trigger(OpenMachineRequested { entity });
+                                editor_state.background_context_menu_position = None;
+                                editor_state.show_machine_selection_menu = false;
+                            }
+                        }
+                        
+                        if !found_machines {
+                            ui.label("No available machines");
+                        }
+                        
+                        ui.separator();
+                        if ui.button("Cancel").clicked() {
+                            editor_state.show_machine_selection_menu = false;
+                        }
+                    });
+                });
+            
+            // Close submenu if clicked elsewhere
+            if ctx.input(|i| i.pointer.any_click()) {
+                let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
+                let main_menu_rect = egui::Rect::from_min_size(base_position, egui::Vec2::new(200.0, 150.0));
+                let submenu_rect = egui::Rect::from_min_size(submenu_position, egui::Vec2::new(200.0, 150.0));
+                
+                if !main_menu_rect.contains(pointer_pos) && !submenu_rect.contains(pointer_pos) {
+                    editor_state.background_context_menu_position = None;
+                    editor_state.show_machine_selection_menu = false;
+                }
+            }
+        }
+    }
+}
+
+/// Observer to handle background context menu requests
+fn handle_background_context_menu_request(
+    trigger: Trigger<BackgroundContextMenuRequested>,
+    mut editor_state: ResMut<EditorState>,
+) {
+    let event = trigger.event();
+    editor_state.background_context_menu_position = Some(event.position);
+}
+
+/// Observer to handle open machine requests
+fn handle_open_machine_request(
+    trigger: Trigger<OpenMachineRequested>,
+    mut editor_state: ResMut<EditorState>,
+    name_query: Query<&Name>,
+) {
+    let event = trigger.event();
+    
+    // Don't open if already open
+    if editor_state.is_machine_open(event.entity) {
+        return;
+    }
+    
+    let display_name = if let Ok(name) = name_query.get(event.entity) {
+        name.as_str().to_string()
+    } else {
+        format!("Machine {:?}", event.entity)
+    };
+    
+    editor_state.add_machine(event.entity, display_name);
+    info!("✅ Opened machine {:?} on canvas", event.entity);
+}
+
+/// Observer to handle close machine requests
+fn handle_close_machine_request(
+    trigger: Trigger<CloseMachineRequested>,
+    mut editor_state: ResMut<EditorState>,
+) {
+    let event = trigger.event();
+    editor_state.remove_machine(event.entity);
+    info!("✅ Closed machine {:?} from canvas", event.entity);
 }

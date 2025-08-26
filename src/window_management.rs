@@ -15,7 +15,7 @@ use crate::EditorWindowContextPass;
 
 /// System to handle hotkeys for opening editor windows
 /// 
-/// Listens for Ctrl+O to spawn new editor windows.
+/// Listens for Ctrl+O to spawn new editor windows that go directly to the canvas.
 pub fn handle_editor_hotkeys(
     input: Res<ButtonInput<KeyCode>>,
     primary_window: Query<Entity, With<PrimaryWindow>>,
@@ -72,6 +72,6 @@ pub fn cleanup_editor_window(
             }
         }
     }
-    // Reset editor UI to main menu on window close
-    editor_state.selected_machine = None;
+    // Clear all open machines when window closes
+    editor_state.open_machines.clear();
 }

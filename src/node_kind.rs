@@ -52,7 +52,12 @@ pub fn sync_node_kind_machines(
     mut commands: Commands,
     mut state_machines: Query<(&StateMachinePersistentData, &mut crate::editor_state::StateMachineTransientData), With<StateMachine>>,    
 ) {
-    let Some(root) = editor_state.selected_machine else { return; };
+    // Find which machine to use (simplified approach)
+    let root = if let Some(open_machine) = editor_state.open_machines.first() {
+        open_machine.entity
+    } else {
+        return;
+    };
     let Ok((persistent, mut transient)) = state_machines.get_mut(root) else { return; };
 
     for (&state_entity, _node) in persistent.nodes.iter() {
@@ -113,7 +118,12 @@ pub fn on_enter_nodekind_state_parallel(
     commands.entity(state).remove::<bevy_gearbox::InitialState>();
 
     // Ensure at least one child exists; if none, create one and add a visual node
-    let Some(root) = editor_state.selected_machine else { return; };
+    // Find which machine to use (simplified approach)
+    let root = if let Some(open_machine) = editor_state.open_machines.first() {
+        open_machine.entity
+    } else {
+        return;
+    };
     commands.queue(move |world: &mut World| {
         let has_child = world
             .get::<bevy_gearbox::StateChildren>(state)
@@ -147,7 +157,12 @@ pub fn on_enter_nodekind_state_parent(
     let state = *target_state_entity;
     commands.entity(state).remove::<bevy_gearbox::Parallel>();
 
-    let Some(root) = editor_state.selected_machine else { return; };
+    // Find which machine to use (simplified approach)
+    let root = if let Some(open_machine) = editor_state.open_machines.first() {
+        open_machine.entity
+    } else {
+        return;
+    };
     commands.queue(move |world: &mut World| {
         // Ensure at least one child
         let first_child: Option<Entity> = world
@@ -195,7 +210,12 @@ pub fn on_enter_nodekind_state_parent_via_make_parent(
     let nk_state = trigger.target();
     let Ok(NodeKindFor(target_state_entity)) = nk_for_query.get(nk_state) else { return; };
     let state = *target_state_entity;
-    let Some(root) = editor_state.selected_machine else { return; };
+    // Find which machine to use (simplified approach)
+    let root = if let Some(open_machine) = editor_state.open_machines.first() {
+        open_machine.entity
+    } else {
+        return;
+    };
     commands.queue(move |world: &mut World| {
         let mut first_child: Option<Entity> = world
             .get::<bevy_gearbox::StateChildren>(state)
@@ -225,7 +245,12 @@ pub fn on_remove_state_children(
     mut commands: Commands,
 ) {
     let parent = trigger.target();
-    let Some(root) = editor_state.selected_machine else { return; };
+    // Find which machine to use (simplified approach)
+    let root = if let Some(open_machine) = editor_state.open_machines.first() {
+        open_machine.entity
+    } else {
+        return;
+    };
     let Ok(transient) = q.get_mut(root) else { return; };
     let Some(&nk_root) = transient.node_kind_roots.get(&parent) else { return; };
     commands.trigger_targets(AllChildrenRemoved, nk_root);

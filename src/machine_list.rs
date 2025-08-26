@@ -35,7 +35,15 @@ pub fn show_machine_list(
             };
 
             if ui.button(&display_name).clicked() {
-                editor_state.selected_machine = Some(entity);
+                // In the new system, we open machines on the canvas instead
+                if !editor_state.is_machine_open(entity) {
+                    let display_name = if let Some(name) = name_opt {
+                        name.as_str().to_string()
+                    } else {
+                        format!("Machine {:?}", entity)
+                    };
+                    editor_state.add_machine(entity, display_name);
+                }
             }
         }
         
@@ -49,7 +57,8 @@ pub fn show_machine_list(
                 Name::new("New Machine"),
             )).id();
             
-            editor_state.selected_machine = Some(new_entity);
+            // Open the new machine on the canvas
+            editor_state.add_machine(new_entity, "New Machine".to_string());
         }
     });
 }
