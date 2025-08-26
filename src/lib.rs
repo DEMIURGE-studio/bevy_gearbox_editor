@@ -21,6 +21,7 @@ mod machine_list;
 pub mod components;
 pub mod reflectable;
 pub mod node_kind;
+pub mod codegen;
 
 // Re-exports
 pub use editor_state::*;
@@ -75,12 +76,12 @@ impl Plugin for GearboxEditorPlugin {
             // NodeKind dogfood state machines (per selected machine)
             .add_systems(Update, node_kind::sync_node_kind_machines)
             // NodeKind event listeners
-            .add_event_edge::<node_kind::AddChildClicked>()
-            .add_event_edge::<node_kind::ChildAdded>()
-            .add_event_edge::<node_kind::AllChildrenRemoved>()
-            .add_event_edge::<node_kind::MakeParallelClicked>()
-            .add_event_edge::<node_kind::MakeParentClicked>()
-            .add_event_edge::<node_kind::MakeLeafClicked>()
+            .add_transition_event::<node_kind::AddChildClicked>()
+            .add_transition_event::<node_kind::ChildAdded>()
+            .add_transition_event::<node_kind::AllChildrenRemoved>()
+            .add_transition_event::<node_kind::MakeParallelClicked>()
+            .add_transition_event::<node_kind::MakeParentClicked>()
+            .add_transition_event::<node_kind::MakeLeafClicked>()
             .add_observer(node_kind::on_enter_nodekind_state_parallel)
             .add_observer(node_kind::on_enter_nodekind_state_parent)
             .add_observer(node_kind::on_enter_nodekind_state_parent_via_make_parent)
@@ -106,7 +107,8 @@ impl Plugin for GearboxEditorPlugin {
             .add_observer(handle_delete_node)
             .add_observer(handle_background_context_menu_request)
             .add_observer(handle_open_machine_request)
-            .add_observer(handle_close_machine_request);
+            .add_observer(handle_close_machine_request)
+            .add_observer(handle_view_related);
     }
 }
 
@@ -940,4 +942,60 @@ fn handle_close_machine_request(
     let event = trigger.event();
     editor_state.remove_machine(event.entity);
     info!("✅ Closed machine {:?} from canvas", event.entity);
+}
+
+/// Observer to handle ViewRelated events
+/// If the origin entity is currently being viewed in the editor, automatically loads the target entity
+fn handle_view_related(
+    trigger: Trigger<ViewRelated>,
+    mut editor_state: ResMut<EditorState>,
+    name_query: Query<&Name>,
+    state_machine_query: Query<Entity, With<StateMachine>>,
+) {
+    let event = trigger.event();
+    
+    // Check if the origin entity is currently being viewed
+    if !editor_state.is_machine_open(event.origin) {
+        // Origin is not being viewed, so don't load the target
+        return;
+    }
+    
+    // Verify that the target entity has a state machine
+    if state_machine_query.get(event.target).is_err() {
+        warn!("ViewRelated target entity {:?} does not have a StateMachine component", event.target);
+        return;
+    }
+    
+    // Don't add if already open
+    if editor_state.is_machine_open(event.target) {
+        return;
+    }
+    
+    // Get display name for the target
+    let display_name = if let Ok(name) = name_query.get(event.target) {
+        name.as_str().to_string()
+    } else {
+        format!("Related {:?}", event.target)
+    };
+    
+    // Position the related entity near its origin
+    let origin_offset = editor_state.open_machines.iter()
+        .find(|m| m.entity == event.origin)
+        .map(|m| m.canvas_offset)
+        .unwrap_or(egui::Vec2::ZERO);
+    
+    // Offset the related entity slightly to the right and down from the origin
+    let related_offset = origin_offset + egui::Vec2::new(300.0, 100.0);
+    
+    // Add the related machine with the calculated offset
+    editor_state.add_machine_with_offset(event.target, display_name, related_offset);
+    
+    // Track the relationship for cleanup purposes
+    editor_state.related_entities
+        .entry(event.origin)
+        .or_insert_with(Vec::new)
+        .push(event.target);
+    
+    info!("🔗 Auto-loaded related machine {:?} because origin {:?} is being viewed", 
+          event.target, event.origin);
 }

@@ -705,6 +705,7 @@ name = "bevy_gearbox"
 version = "0.3.3"
 dependencies = [
  "bevy",
+ "bevy_gearbox_macros",
 ]
 
 [[package]]
@@ -721,6 +722,15 @@ dependencies = [
  "disqualified",
  "egui",
  "smallvec",
+]
+
+[[package]]
+name = "bevy_gearbox_macros"
+version = "0.3.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

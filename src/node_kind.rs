@@ -28,22 +28,22 @@ pub struct NodeKindParent;
 pub struct NodeKindParallel;
 
 // Events that drive NodeKind transitions
-#[derive(Event, Clone)]
+#[derive(SimpleTransition, Event, Clone)]
 pub struct AddChildClicked;
 
-#[derive(Event, Clone)]
+#[derive(SimpleTransition, Event, Clone)]
 pub struct ChildAdded;
 
-#[derive(Event, Clone)]
+#[derive(SimpleTransition, Event, Clone)]
 pub struct AllChildrenRemoved;
 
-#[derive(Event, Clone)]
+#[derive(SimpleTransition, Event, Clone)]
 pub struct MakeParallelClicked;
 
-#[derive(Event, Clone)]
+#[derive(SimpleTransition, Event, Clone)]
 pub struct MakeParentClicked;
 
-#[derive(Event, Clone)]
+#[derive(SimpleTransition, Event, Clone)]
 pub struct MakeLeafClicked;
 
 /// Ensure there is a NodeKind machine for every editor node under the selected machine

@@ -218,6 +218,9 @@ pub struct EditorState {
     pub inspector_tab: InspectorTab,
     /// Component addition UI state
     pub component_addition: ComponentAdditionState,
+    /// Tracks relationships between origin entities and their related entities
+    /// Key: origin entity, Value: list of related entities
+    pub related_entities: std::collections::HashMap<Entity, Vec<Entity>>,
 }
 
 /// Inspector tabs
@@ -283,9 +286,41 @@ impl EditorState {
         self.open_machines.push(open_machine);
     }
     
-    /// Remove a machine from the canvas
+    /// Add a new machine to the canvas with a specific offset
+    pub fn add_machine_with_offset(&mut self, entity: Entity, display_name: String, canvas_offset: egui::Vec2) {
+        let open_machine = OpenMachine {
+            entity,
+            display_name,
+            canvas_offset,
+        };
+        
+        self.open_machines.push(open_machine);
+    }
+    
+    /// Remove a machine from the canvas and all its related entities
     pub fn remove_machine(&mut self, entity: Entity) {
-        self.open_machines.retain(|machine| machine.entity != entity);
+        // First, collect all related entities that should be removed
+        let mut entities_to_remove = vec![entity];
+        
+        if let Some(related) = self.related_entities.get(&entity) {
+            entities_to_remove.extend(related.iter().copied());
+        }
+        
+        // Remove all entities (origin and related) from the canvas
+        for entity_to_remove in &entities_to_remove {
+            self.open_machines.retain(|machine| machine.entity != *entity_to_remove);
+        }
+        
+        // Clean up the relationship tracking
+        self.related_entities.remove(&entity);
+        
+        // Also remove this entity from being a related entity of others
+        for (_, related_list) in self.related_entities.iter_mut() {
+            related_list.retain(|&related_entity| related_entity != entity);
+        }
+        
+        // Remove empty relationship entries
+        self.related_entities.retain(|_, related_list| !related_list.is_empty());
     }
     
     /// Check if a machine is currently open
@@ -349,6 +384,7 @@ pub enum NodeAction {
     MakeLeaf,
     Delete,
     ResetRegion,
+    GenerateCode,
 }
 
 /// Event fired when a node action is triggered
@@ -427,6 +463,16 @@ pub struct OpenMachineRequested {
 #[derive(Event)]
 pub struct CloseMachineRequested {
     pub entity: Entity,
+}
+
+/// Event fired when an entity wants to show a related entity in the editor
+/// If the origin entity is currently being viewed, the target entity will be automatically loaded
+#[derive(Event)]
+pub struct ViewRelated {
+    /// The origin entity (e.g., firebreath mantra ability)
+    pub origin: Entity,
+    /// The target entity to be viewed (e.g., explosive projectile)
+    pub target: Entity,
 }
 
 /// Data to track transition pulse animation

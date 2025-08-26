@@ -11,9 +11,9 @@ fn main() {
         .add_plugins(bevy_gearbox_editor::GearboxEditorPlugin)
         .add_systems(Startup, setup)
         .add_systems(Update, input_system)
-        .add_event_edge::<CastAbility>()
-        .add_event_edge::<OnRepeat>()
-        .add_event_edge::<OnComplete>()
+        .add_transition_event::<CastAbility>()
+        .add_transition_event::<OnRepeat>()
+        .add_transition_event::<OnComplete>()
         .add_observer(on_enter_repeating_emit_events)
         .add_observer(reset_repeater)
         .add_observer(print_enter_state_messages)
@@ -30,13 +30,13 @@ fn main() {
 
 // --- Events reflected so they can be referenced in the scene file ---
 
-#[derive(Event, Clone, Reflect, Default)]
+#[derive(SimpleTransition, Event, Clone, Reflect, Default)]
 struct CastAbility;
 
-#[derive(Event, Clone, Reflect, Default)]
+#[derive(SimpleTransition, Event, Clone, Reflect, Default)]
 struct OnRepeat;
 
-#[derive(Event, Clone, Reflect, Default)]
+#[derive(SimpleTransition, Event, Clone, Reflect, Default)]
 struct OnComplete;
 
 #[derive(Component, Reflect, Default)]
