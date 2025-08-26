@@ -21,7 +21,6 @@ mod machine_list;
 pub mod components;
 pub mod reflectable;
 pub mod node_kind;
-pub mod codegen;
 
 // Re-exports
 pub use editor_state::*;

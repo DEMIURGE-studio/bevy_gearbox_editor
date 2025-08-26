@@ -384,7 +384,6 @@ pub enum NodeAction {
     MakeLeaf,
     Delete,
     ResetRegion,
-    GenerateCode,
 }
 
 /// Event fired when a node action is triggered
