@@ -16,14 +16,21 @@ use crate::EditorWindowContextPass;
 /// System to handle hotkeys for opening editor windows
 /// 
 /// Listens for Ctrl+O to spawn new editor windows that go directly to the canvas.
+/// Only creates a new window if one doesn't already exist.
 pub fn handle_editor_hotkeys(
     input: Res<ButtonInput<KeyCode>>,
     primary_window: Query<Entity, With<PrimaryWindow>>,
+    existing_editor_windows: Query<Entity, With<EditorWindow>>,
     mut commands: Commands,
 ) {
     if input.pressed(KeyCode::ControlLeft) && input.just_pressed(KeyCode::KeyO) {
         if let Ok(_primary_entity) = primary_window.single() {
-            spawn_editor_window(&mut commands);
+            // Only spawn a new editor window if one doesn't already exist
+            if existing_editor_windows.is_empty() {
+                spawn_editor_window(&mut commands);
+            } else {
+                info!("🪟 Editor window already exists, ignoring Ctrl+O");
+            }
         }
     }
 }
