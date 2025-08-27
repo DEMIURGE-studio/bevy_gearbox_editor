@@ -315,6 +315,9 @@ pub(crate) fn sync_reflectable_on_persistent_change(
 ) {
     for entity in query.iter() {
         commands.queue(move |world: &mut World| {
+            if !world.entities().contains(entity) {
+                return;
+            }
             let persistent_data = world.entity(entity).get::<StateMachinePersistentData>().unwrap();
             let reflectable_data = ReflectableStateMachinePersistentData::from_persistent_data(persistent_data, world);
             world.entity_mut(entity).insert(reflectable_data);
