@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevy_gearbox::active::Active;
 use bevy_gearbox::{InitialState, StateMachine};
 use bevy_egui::egui;
-use std::collections::HashSet;
+use bevy::platform::collections::HashSet;
 
 use crate::editor_state::{EditorState, StateMachinePersistentData, StateMachineTransientData, NodeDragged, NodeContextMenuRequested, TransitionContextMenuRequested, RenderItem, get_entity_name, should_get_selection_boost, TransitionCreationRequested, CreateTransition, draw_arrow, draw_interactive_pill_label, closest_point_on_rect_edge, get_node_display_color, get_transition_color};
 use crate::components::{NodeType, LeafNode, ParentNode};

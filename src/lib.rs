@@ -3,8 +3,12 @@
 //! A visual editor for Bevy state machines with multi-window support,
 //! hierarchical node editing, and real-time entity inspection.
 
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
+use bevy::platform::collections::HashSet;
 use bevy_egui::EguiContext;
+use bevy_egui::PrimaryEguiContext;
+use bevy_inspector_egui::bevy_inspector::ui_for_world;
 use bevy_gearbox::{StateMachine, InitialState};
 use bevy_gearbox::transitions::{Target, Source, EdgeKind, AlwaysEdge};
 use bevy_ecs::schedule::ScheduleLabel;
@@ -61,6 +65,7 @@ impl Plugin for GearboxEditorPlugin {
         app.add_systems(Update, window_management::handle_editor_hotkeys)
             .add_observer(window_management::cleanup_editor_window)
             .add_systems(EditorWindowContextPass, editor_ui_system)
+            .add_systems(EditorWindowContextPass, embedded_world_inspector_exclusive)
             .add_systems(EditorWindowContextPass, entity_inspector::entity_inspector_system)
             .add_systems(Update, (
                 node_editor::update_node_types,
@@ -99,8 +104,8 @@ impl Plugin for GearboxEditorPlugin {
             .add_observer(handle_create_transition)
             .add_observer(handle_save_state_machine)
             .add_observer(reflectable::on_add_reflectable_state_machine)
-            .add_observer(handle_transition_pulse)
             .add_observer(handle_node_enter_pulse)
+            .add_observer(handle_transition_actions_pulse)
             .add_observer(handle_delete_transition)
             .add_observer(handle_delete_transition_by_edge)
             .add_observer(handle_delete_node)
@@ -191,6 +196,22 @@ fn editor_ui_system(
                 &machine_list_query,
                 &mut commands,
             );
+        });
+    }
+}
+
+/// Exclusive system to embed the World Inspector UI inside the editor window
+fn embedded_world_inspector_exclusive(world: &mut World) {
+    // Query EguiContext for the editor window, clone the egui Context to end the borrow before using world again
+    let ctx_opt = {
+        let mut query = world.query_filtered::<&mut EguiContext, (With<EditorWindow>, Without<PrimaryEguiContext>)>();
+        query.iter_mut(world).next().map(|mut egui_context| egui_context.get_mut().clone())
+    };
+    if let Some(ctx) = ctx_opt {
+        egui::Window::new("World Inspector").default_open(true).show(&ctx, |ui| {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                ui_for_world(world, ui);
+            });
         });
     }
 }
@@ -441,21 +462,11 @@ fn handle_delete_transition(
     
     // Remove the visual transition from persistent data
     if let Ok(mut persistent_data) = state_machines.get_mut(root) {
-        let initial_count = persistent_data.visual_transitions.len();
         persistent_data.visual_transitions.retain(|transition| {
             !(transition.source_entity == event.source_entity &&
                 transition.target_entity == event.target_entity &&
                 transition.event_type == event.event_type)
         });
-        let final_count = persistent_data.visual_transitions.len();
-        
-        if initial_count > final_count {
-            info!("✅ Removed visual transition from {:?} to {:?} ({}) - {} transitions remaining", 
-                    event.source_entity, event.target_entity, event.event_type, final_count);
-        } else {
-            warn!("⚠️ No matching visual transition found to remove: {:?} -> {:?} ({})", 
-                    event.source_entity, event.target_entity, event.event_type);
-        }
     } else {
         warn!("⚠️ Could not find state machine persistent data for root {:?}", root);
     }
@@ -503,20 +514,22 @@ fn handle_delete_transition(
     });
 }
 
-/// Observer to handle transition events and create pulse animations
-fn handle_transition_pulse(
-    trigger: Trigger<bevy_gearbox::Transition>,
+/// Observer to create pulses from the universal TransitionActions edge event
+fn handle_transition_actions_pulse(
+    trigger: Trigger<bevy_gearbox::TransitionActions>,
+    edge_q: Query<(&Source, &Target)>,
+    child_of_q: Query<&bevy_gearbox::StateChildOf>,
     mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
-    edge_target_query: Query<&Target>,
 ) {
-    let event = trigger.event();
-    let target_entity = trigger.target(); // This is the state machine root
-    
-    // Add pulse to the state machine's transient data
-    if let Ok(mut transient_data) = state_machines.get_mut(target_entity) {
-        if let Ok(edge_target) = edge_target_query.get(event.edge) {
-            transient_data.transition_pulses.push(TransitionPulse::new(event.source, edge_target.0));
-        }
+    let edge = trigger.target();
+    let Ok((Source(source), Target(target))) = edge_q.get(edge) else { return; };
+    let root = child_of_q.root_ancestor(*source);
+    if let Ok(mut transient) = state_machines.get_mut(root) {
+        info!(
+            "[Editor] Pulse add (actions): root={:?} edge={:?} source={:?} target={:?}",
+            root, edge, source, target
+        );
+        transient.transition_pulses.push(TransitionPulse::new(*source, *target));
     }
 }
 
@@ -623,10 +636,10 @@ fn sync_edge_visuals_from_ecs(
         let Ok(mut persistent) = machines.get_mut(selected_root) else { continue; };
 
     // Build a set of current edges under this root
-    let mut seen_edges: std::collections::HashSet<Entity> = std::collections::HashSet::new();
+    let mut seen_edges = HashSet::new();
 
     // Snapshot node rects to avoid borrow conflicts
-    let mut node_rects: std::collections::HashMap<Entity, egui::Rect> = std::collections::HashMap::new();
+    let mut node_rects = HashMap::new();
     for (entity, node) in &persistent.nodes {
         node_rects.insert(*entity, node.current_rect());
     }

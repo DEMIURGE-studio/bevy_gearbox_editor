@@ -8,7 +8,8 @@
 
 use bevy::prelude::*;
 use bevy_gearbox::StateMachine;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use bevy::platform::collections::HashSet;
 
 use crate::editor_state::{EditorState, NodeDragged};
 use crate::components::NodeType;

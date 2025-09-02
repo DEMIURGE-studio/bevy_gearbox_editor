@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::Path;
 
 use bevy::{
@@ -6,6 +5,7 @@ use bevy::{
     scene::{DynamicScene, DynamicSceneBuilder, DynamicSceneRoot},
     tasks::IoTaskPool,
 };
+use bevy::platform::collections::HashMap;
 use bevy_ecs::component::{Mutable, StorageType};
 use bevy_gearbox::transitions::Transitions as EdgeTransitions;
 

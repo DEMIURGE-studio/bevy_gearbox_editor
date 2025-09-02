@@ -53,6 +53,7 @@ fn spawn_editor_window(commands: &mut Commands) {
     commands.spawn((
         Camera3d::default(),
         Camera {
+            order: 3,
             target: RenderTarget::Window(WindowRef::Entity(window_entity)),
             ..default()
         },

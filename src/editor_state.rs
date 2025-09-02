@@ -1,10 +1,10 @@
 //! Editor state management, events, and shared types
 
 use bevy::prelude::*;
+use bevy::platform::collections::{HashMap, HashSet};
 use bevy_gearbox::InitialState;
 use bevy_gearbox::active::Active;
 use egui::Pos2;
-use std::collections::HashMap;
 
 use crate::components::NodeType;
 
@@ -247,7 +247,7 @@ pub struct ComponentAdditionState {
     /// Hierarchical component organization (cached)
     pub component_hierarchy: Option<crate::entity_inspector::ComponentHierarchy>,
     /// Expanded state for each namespace
-    pub expanded_namespaces: std::collections::HashSet<String>,
+    pub expanded_namespaces: HashSet<String>,
 }
 
 impl ComponentAdditionState {
