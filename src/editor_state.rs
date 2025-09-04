@@ -206,6 +206,8 @@ pub struct EditorState {
     pub context_menu_position: Option<Pos2>,
     /// Position where the background context menu should appear
     pub background_context_menu_position: Option<Pos2>,
+    /// One-shot flag to suppress background context menu this frame (e.g., when node menu handled the click)
+    pub suppress_background_context_menu_once: bool,
     /// Whether the machine selection submenu is open
     pub show_machine_selection_menu: bool,
     /// Transition for which a context menu is requested

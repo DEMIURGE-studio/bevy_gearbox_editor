@@ -24,8 +24,16 @@ pub fn handle_context_menu_request(
     let event = trigger.event();
     
     // Store the context menu request in editor state for rendering
+    // Mutual exclusivity: close background and transition menus
+    editor_state.background_context_menu_position = None;
+    editor_state.transition_context_menu = None;
+    editor_state.transition_context_menu_position = None;
+    editor_state.show_machine_selection_menu = false;
+    // Open node menu
     editor_state.context_menu_entity = Some(event.entity);
     editor_state.context_menu_position = Some(event.position);
+    // Suppress background menu for this frame
+    editor_state.suppress_background_context_menu_once = true;
 }
 
 /// Observer to handle transition context menu requests
@@ -36,8 +44,15 @@ pub fn handle_transition_context_menu_request(
     let event = trigger.event();
     
     // Store the transition context menu request in editor state for rendering
+    // Mutual exclusivity: close background and node menus
+    editor_state.background_context_menu_position = None;
+    editor_state.context_menu_entity = None;
+    editor_state.context_menu_position = None;
+    editor_state.show_machine_selection_menu = false;
     editor_state.transition_context_menu = Some((event.source_entity, event.target_entity, event.event_type.clone(), event.edge_entity));
     editor_state.transition_context_menu_position = Some(event.position);
+    // Suppress background menu for this frame
+    editor_state.suppress_background_context_menu_once = true;
 }
 
 /// Observer to handle node actions triggered from context menus
@@ -169,6 +184,8 @@ pub fn render_context_menu(
     if let (Some(entity), Some(position)) = (editor_state.context_menu_entity, editor_state.context_menu_position) {
         let menu_id = egui::Id::new("context_menu").with(entity);
         
+        // Track the rect we actually drew so outside-click detection matches
+        let mut last_menu_rect: Option<egui::Rect> = None;
         egui::Area::new(menu_id)
             .fixed_pos(position)
             .order(egui::Order::Foreground)
@@ -333,17 +350,19 @@ pub fn render_context_menu(
                             editor_state.context_menu_position = None;
                             ui.close_menu();
                         }
+                        // Capture the menu rect from the UI's cursor
+                        last_menu_rect = Some(ui.min_rect());
                     });
             });
         
         // Close context menu if clicked elsewhere
-        if ctx.input(|i| i.pointer.any_click()) {
-            let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
-            let menu_rect = egui::Rect::from_min_size(position, egui::Vec2::new(120.0, 60.0));
-            
-            if !menu_rect.contains(pointer_pos) {
-                editor_state.context_menu_entity = None;
-                editor_state.context_menu_position = None;
+        if let Some(menu_rect) = last_menu_rect {
+            if ctx.input(|i| i.pointer.any_click()) {
+                let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
+                if !menu_rect.contains(pointer_pos) {
+                    editor_state.context_menu_entity = None;
+                    editor_state.context_menu_position = None;
+                }
             }
         }
     }
@@ -355,6 +374,7 @@ pub fn render_context_menu(
     ) {
         let menu_id = egui::Id::new("transition_context_menu").with((source, target));
         
+        let mut last_menu_rect: Option<egui::Rect> = None;
         egui::Area::new(menu_id)
             .fixed_pos(position)
             .order(egui::Order::Foreground)
@@ -407,17 +427,18 @@ pub fn render_context_menu(
                             editor_state.transition_context_menu_position = None;
                             ui.close_menu();
                         }
+                        last_menu_rect = Some(ui.min_rect());
                     });
             });
         
         // Close transition context menu if clicked elsewhere
-        if ctx.input(|i| i.pointer.any_click()) {
-            let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
-            let menu_rect = egui::Rect::from_min_size(position, egui::Vec2::new(120.0, 40.0));
-            
-            if !menu_rect.contains(pointer_pos) {
-                editor_state.transition_context_menu = None;
-                editor_state.transition_context_menu_position = None;
+        if let Some(menu_rect) = last_menu_rect {
+            if ctx.input(|i| i.pointer.any_click()) {
+                let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
+                if !menu_rect.contains(pointer_pos) {
+                    editor_state.transition_context_menu = None;
+                    editor_state.transition_context_menu_position = None;
+                }
             }
         }
     }

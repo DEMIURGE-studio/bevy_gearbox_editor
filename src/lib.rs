@@ -733,6 +733,12 @@ fn handle_background_interactions(
     editor_state: &mut EditorState,
     commands: &mut Commands,
 ) {
+    // If a node/transition menu was just opened this frame, suppress background handling once
+    if editor_state.suppress_background_context_menu_once {
+        editor_state.suppress_background_context_menu_once = false;
+        return;
+    }
+
     // Check for right-click on background
     if ui.input(|i| i.pointer.secondary_clicked()) {
         let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
@@ -744,6 +750,12 @@ fn handle_background_interactions(
         });
         
         if !clicked_on_machine {
+            // Mutual exclusivity: close other menus
+            editor_state.context_menu_entity = None;
+            editor_state.context_menu_position = None;
+            editor_state.transition_context_menu = None;
+            editor_state.transition_context_menu_position = None;
+            editor_state.show_machine_selection_menu = false;
             commands.trigger(BackgroundContextMenuRequested {
                 position: pointer_pos,
             });
@@ -808,6 +820,8 @@ fn render_background_context_menu(
     if let Some(position) = editor_state.background_context_menu_position {
         let menu_id = egui::Id::new("background_context_menu");
         
+        // Track drawn rect for accurate outside-click detection
+        let mut last_main_menu_rect: Option<egui::Rect> = None;
         egui::Area::new(menu_id)
             .fixed_pos(position)
             .order(egui::Order::Foreground)
@@ -831,16 +845,20 @@ fn render_background_context_menu(
                         commands.trigger(OpenMachineRequested { entity: new_entity });
                         editor_state.background_context_menu_position = None;
                     }
+                    // Capture rect
+                    last_main_menu_rect = Some(ui.min_rect());
                 });
             });
         
         // Close menu if clicked elsewhere (but not if machine selection menu is open)
-        if !editor_state.show_machine_selection_menu && ctx.input(|i| i.pointer.any_click()) {
-            let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
-            let menu_rect = egui::Rect::from_min_size(position, egui::Vec2::new(200.0, 150.0));
-            
-            if !menu_rect.contains(pointer_pos) {
-                editor_state.background_context_menu_position = None;
+        if !editor_state.show_machine_selection_menu {
+            if let Some(menu_rect) = last_main_menu_rect {
+                if ctx.input(|i| i.pointer.any_click()) {
+                    let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
+                    if !menu_rect.contains(pointer_pos) {
+                        editor_state.background_context_menu_position = None;
+                    }
+                }
             }
         }
     }
@@ -851,6 +869,8 @@ fn render_background_context_menu(
             let submenu_position = egui::Pos2::new(base_position.x + 210.0, base_position.y);
             let submenu_id = egui::Id::new("machine_selection_submenu");
             
+            // Track drawn rects
+            let mut last_submenu_rect: Option<egui::Rect> = None;
             egui::Area::new(submenu_id)
                 .fixed_pos(submenu_position)
                 .order(egui::Order::Foreground)
@@ -896,18 +916,18 @@ fn render_background_context_menu(
                         if ui.button("Cancel").clicked() {
                             editor_state.show_machine_selection_menu = false;
                         }
+                        last_submenu_rect = Some(ui.min_rect());
                     });
                 });
             
             // Close submenu if clicked elsewhere
-            if ctx.input(|i| i.pointer.any_click()) {
-                let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
-                let main_menu_rect = egui::Rect::from_min_size(base_position, egui::Vec2::new(200.0, 150.0));
-                let submenu_rect = egui::Rect::from_min_size(submenu_position, egui::Vec2::new(200.0, 150.0));
-                
-                if !main_menu_rect.contains(pointer_pos) && !submenu_rect.contains(pointer_pos) {
-                    editor_state.background_context_menu_position = None;
-                    editor_state.show_machine_selection_menu = false;
+            if let (Some(main_menu_rect), Some(submenu_rect)) = (/* reuse last_main_menu_rect is out of scope; reconstruct conservative */ Some(egui::Rect::from_min_size(base_position, egui::Vec2::new(200.0, 150.0))), last_submenu_rect) {
+                if ctx.input(|i| i.pointer.any_click()) {
+                    let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
+                    if !main_menu_rect.contains(pointer_pos) && !submenu_rect.contains(pointer_pos) {
+                        editor_state.background_context_menu_position = None;
+                        editor_state.show_machine_selection_menu = false;
+                    }
                 }
             }
         }
@@ -920,6 +940,17 @@ fn handle_background_context_menu_request(
     mut editor_state: ResMut<EditorState>,
 ) {
     let event = trigger.event();
+    // If suppressed due to a node/transition menu opening this frame, ignore
+    if editor_state.suppress_background_context_menu_once {
+        editor_state.suppress_background_context_menu_once = false;
+        return;
+    }
+    // Mutual exclusivity: close node and transition menus
+    editor_state.context_menu_entity = None;
+    editor_state.context_menu_position = None;
+    editor_state.transition_context_menu = None;
+    editor_state.transition_context_menu_position = None;
+    editor_state.show_machine_selection_menu = false;
     editor_state.background_context_menu_position = Some(event.position);
 }
 
