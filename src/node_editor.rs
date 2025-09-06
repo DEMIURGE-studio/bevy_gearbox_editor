@@ -418,8 +418,7 @@ fn render_transition_connections(
     // Extract data needed for rendering to avoid borrowing issues
     let transitions_data: Vec<_> = persistent_data.visual_transitions.iter().enumerate().map(|(index, transition)| {
         let transition_color = get_transition_color(
-            transition.source_entity, 
-            transition.target_entity, 
+            transition.edge_entity,
             &transient_data.transition_pulses
         );
         (index, 

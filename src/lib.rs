@@ -529,7 +529,7 @@ fn handle_transition_actions_pulse(
             "[Editor] Pulse add (actions): root={:?} edge={:?} source={:?} target={:?}",
             root, edge, source, target
         );
-        transient.transition_pulses.push(TransitionPulse::new(*source, *target));
+        transient.transition_pulses.push(TransitionPulse::new(*source, *target, edge));
     }
 }
 

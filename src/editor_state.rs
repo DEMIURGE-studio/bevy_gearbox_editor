@@ -481,14 +481,16 @@ pub struct ViewRelated {
 pub struct TransitionPulse {
     pub source_entity: Entity,
     pub target_entity: Entity,
+    pub edge_entity: Entity,
     pub timer: Timer,
 }
 
 impl TransitionPulse {
-    pub fn new(source_entity: Entity, target_entity: Entity) -> Self {
+    pub fn new(source_entity: Entity, target_entity: Entity, edge_entity: Entity) -> Self {
         Self {
             source_entity,
             target_entity,
+            edge_entity,
             timer: Timer::from_seconds(0.4, TimerMode::Once),
         }
     }
@@ -549,12 +551,12 @@ pub fn get_node_display_color(
 }
 
 /// Calculate the color for a transition line/pill based on pulse state
-pub fn get_transition_color(source: Entity, target: Entity, pulses: &[TransitionPulse]) -> egui::Color32 {
+pub fn get_transition_color(edge_entity: Entity, pulses: &[TransitionPulse]) -> egui::Color32 {
     // Base grey color for transitions (same as normal nodes)
     let base_transition_color = NORMAL_NODE_COLOR;
     
     // Find if there's an active pulse for this transition
-    if let Some(pulse) = pulses.iter().find(|p| p.source_entity == source && p.target_entity == target) {
+    if let Some(pulse) = pulses.iter().find(|p| p.edge_entity == edge_entity) {
         let intensity = pulse.intensity();
         // Lerp between normal grey and gold based on pulse intensity
         lerp_color(base_transition_color, ACTIVE_STATE_COLOR, intensity)
