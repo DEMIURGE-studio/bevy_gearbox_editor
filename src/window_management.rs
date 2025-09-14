@@ -67,7 +67,7 @@ fn spawn_editor_window(commands: &mut Commands) {
 /// Clean up editor camera when its window is closed/despawned, to avoid reusing
 /// the same Egui multipass schedule with a lingering context.
 pub fn cleanup_editor_window(
-    trigger: Trigger<OnRemove, Window>,
+    trigger: On<Remove, Window>,
     cameras: Query<(Entity, &Camera), With<EditorWindow>>,
     mut editor_state: ResMut<crate::editor_state::EditorState>,
     mut commands: Commands,

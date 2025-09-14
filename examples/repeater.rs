@@ -81,7 +81,7 @@ fn input_system(
 
 // Emits OnRepeat/OnComplete when entering a state with Repeater
 fn on_enter_repeating_emit_events(
-    trigger: Trigger<EnterState>,
+    trigger: On<EnterState>,
     mut repeater_q: Query<&mut Repeater>,
     child_of_q: Query<&StateChildOf>,
     mut commands: Commands,
@@ -98,7 +98,7 @@ fn on_enter_repeating_emit_events(
 }
 
 fn reset_repeater(
-    trigger: Trigger<Reset>,
+    trigger: On<Reset>,
     mut repeater_q: Query<&mut Repeater>,
 ) {
     let state = trigger.target();
@@ -110,16 +110,16 @@ fn reset_repeater(
 }
 
 // Debug helpers
-fn print_enter_state_messages(trigger: Trigger<EnterState>, names: Query<&Name>) {
+fn print_enter_state_messages(trigger: On<EnterState>, names: Query<&Name>) {
     if let Ok(name) = names.get(trigger.target()) {
         println!("[STATE ENTERED]: {}", name);
     }
 }
 
-fn print_onrepeat(_t: Trigger<OnRepeat>) {
+fn print_onrepeat(_t: On<OnRepeat>) {
     println!("OnRepeat event emitted");
 }
 
-fn print_oncomplete(_t: Trigger<OnComplete>) {
+fn print_oncomplete(_t: On<OnComplete>) {
     println!("OnComplete event emitted");
 }

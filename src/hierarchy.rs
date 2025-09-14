@@ -22,7 +22,7 @@ use crate::StateMachinePersistentData;
 /// This observer recursively moves all children when a parent is dragged,
 /// maintaining relative positions throughout the hierarchy.
 pub fn handle_parent_child_movement(
-    trigger: Trigger<NodeDragged>,
+    trigger: On<NodeDragged>,
     mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     child_of_query: Query<&bevy_gearbox::StateChildOf>,
     children_query: Query<&bevy_gearbox::StateChildren>,

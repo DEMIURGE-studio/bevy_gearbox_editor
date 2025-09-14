@@ -218,7 +218,7 @@ fn embedded_world_inspector_exclusive(world: &mut World) {
 
 /// Observer to handle transition creation requests
 fn handle_transition_creation_request(
-    trigger: Trigger<TransitionCreationRequested>,
+    trigger: On<TransitionCreationRequested>,
     editor_state: Res<EditorState>,
     mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
     type_registry: Res<AppTypeRegistry>,
@@ -251,7 +251,7 @@ fn handle_transition_creation_request(
 
 /// Observer to handle transition creation with selected event type
 fn handle_create_transition(
-    trigger: Trigger<CreateTransition>,
+    trigger: On<CreateTransition>,
     editor_state: Res<EditorState>,
     mut state_machines: Query<(&mut StateMachineTransientData, &mut StateMachinePersistentData), With<StateMachine>>,
     mut commands: Commands,
@@ -415,7 +415,7 @@ fn create_transition_edge_entity(
 
 /// Observer to handle save state machine requests
 fn handle_save_state_machine(
-    trigger: Trigger<SaveStateMachine>,
+    trigger: On<SaveStateMachine>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
@@ -450,7 +450,7 @@ fn handle_save_state_machine(
 
 /// Observer to handle transition deletion requests
 fn handle_delete_transition(
-    trigger: Trigger<DeleteTransition>,
+    trigger: On<DeleteTransition>,
     mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     child_of_query: Query<&bevy_gearbox::StateChildOf>,
     mut commands: Commands,
@@ -516,7 +516,7 @@ fn handle_delete_transition(
 
 /// Observer to create pulses from the universal TransitionActions edge event
 fn handle_transition_actions_pulse(
-    trigger: Trigger<bevy_gearbox::TransitionActions>,
+    trigger: On<bevy_gearbox::TransitionActions>,
     edge_q: Query<(&Source, &Target)>,
     child_of_q: Query<&bevy_gearbox::StateChildOf>,
     mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
@@ -551,7 +551,7 @@ fn update_transition_pulses(
 
 /// Observer to track EnterState events and create node pulses
 fn handle_node_enter_pulse(
-    trigger: Trigger<bevy_gearbox::EnterState>,
+    trigger: On<bevy_gearbox::EnterState>,
     child_of_query: Query<&bevy_gearbox::StateChildOf>,
     mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
 ) {
@@ -577,7 +577,7 @@ fn update_node_pulses(
 
 /// Observer to handle node deletion with all edge cases
 fn handle_delete_node(
-    trigger: Trigger<DeleteNode>,
+    trigger: On<DeleteNode>,
     mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     state_child_of_query: Query<&bevy_gearbox::StateChildOf>,
     mut commands: Commands,
@@ -694,7 +694,7 @@ fn sync_edge_visuals_from_ecs(
 
 /// Observer to handle transition deletion by edge entity
 fn handle_delete_transition_by_edge(
-    trigger: Trigger<DeleteTransitionByEdge>,
+    trigger: On<DeleteTransitionByEdge>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
@@ -711,7 +711,7 @@ fn handle_delete_transition_by_edge(
 
 /// Observer to handle SetInitialStateRequested requests
 fn handle_set_initial_state_request(
-    trigger: Trigger<SetInitialStateRequested>,
+    trigger: On<SetInitialStateRequested>,
     mut commands: Commands,
 ) {
     let req = trigger.event();
@@ -936,7 +936,7 @@ fn render_background_context_menu(
 
 /// Observer to handle background context menu requests
 fn handle_background_context_menu_request(
-    trigger: Trigger<BackgroundContextMenuRequested>,
+    trigger: On<BackgroundContextMenuRequested>,
     mut editor_state: ResMut<EditorState>,
 ) {
     let event = trigger.event();
@@ -956,7 +956,7 @@ fn handle_background_context_menu_request(
 
 /// Observer to handle open machine requests
 fn handle_open_machine_request(
-    trigger: Trigger<OpenMachineRequested>,
+    trigger: On<OpenMachineRequested>,
     mut editor_state: ResMut<EditorState>,
     name_query: Query<&Name>,
 ) {
@@ -979,7 +979,7 @@ fn handle_open_machine_request(
 
 /// Observer to handle close machine requests
 fn handle_close_machine_request(
-    trigger: Trigger<CloseMachineRequested>,
+    trigger: On<CloseMachineRequested>,
     mut editor_state: ResMut<EditorState>,
 ) {
     let event = trigger.event();
@@ -990,7 +990,7 @@ fn handle_close_machine_request(
 /// Observer to handle ViewRelated events
 /// If the origin entity is currently being viewed in the editor, automatically loads the target entity
 fn handle_view_related(
-    trigger: Trigger<ViewRelated>,
+    trigger: On<ViewRelated>,
     mut editor_state: ResMut<EditorState>,
     name_query: Query<&Name>,
     state_machine_query: Query<Entity, With<StateMachine>>,

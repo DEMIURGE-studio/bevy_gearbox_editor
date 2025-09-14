@@ -18,7 +18,7 @@ use crate::node_kind::{AddChildClicked, MakeParallelClicked, MakeParentClicked, 
 /// 
 /// Renders a context menu at the requested position with available actions.
 pub fn handle_context_menu_request(
-    trigger: Trigger<NodeContextMenuRequested>,
+    trigger: On<NodeContextMenuRequested>,
     mut editor_state: ResMut<EditorState>,
 ) {
     let event = trigger.event();
@@ -38,7 +38,7 @@ pub fn handle_context_menu_request(
 
 /// Observer to handle transition context menu requests
 pub fn handle_transition_context_menu_request(
-    trigger: Trigger<TransitionContextMenuRequested>,
+    trigger: On<TransitionContextMenuRequested>,
     mut editor_state: ResMut<EditorState>,
 ) {
     let event = trigger.event();
@@ -60,7 +60,7 @@ pub fn handle_transition_context_menu_request(
 /// Processes actions like Inspect and Add Child, performing the necessary
 /// entity creation and component management.
 pub fn handle_node_action(
-    trigger: Trigger<NodeActionTriggered>,
+    trigger: On<NodeActionTriggered>,
     mut commands: Commands,
     mut editor_state: ResMut<EditorState>,
     mut state_machines: Query<(&mut StateMachinePersistentData, &mut StateMachineTransientData), With<StateMachine>>,
@@ -114,8 +114,8 @@ pub fn handle_node_action(
             let parent_entity = event.entity;
             if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&parent_entity) {
-                    commands.trigger_targets(AddChildClicked, nk_root);
-                    commands.trigger_targets(crate::node_kind::ChildAdded, nk_root);
+                    commands.trigger(AddChildClicked::new(nk_root));
+                    commands.trigger(crate::node_kind::ChildAdded::new(nk_root));
                 }
             }
         }
@@ -128,7 +128,7 @@ pub fn handle_node_action(
             let state_entity = event.entity;
             if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
-                    commands.trigger_targets(MakeParallelClicked, nk_root);
+                    commands.trigger(MakeParallelClicked::new(nk_root));
                 }
             }
         }
@@ -137,7 +137,7 @@ pub fn handle_node_action(
             let state_entity = event.entity;
             if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
-                    commands.trigger_targets(MakeParentClicked, nk_root);
+                    commands.trigger(MakeParentClicked::new(nk_root));
                 }
             }
         }
@@ -146,7 +146,7 @@ pub fn handle_node_action(
             let state_entity = event.entity;
             if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
-                    commands.trigger_targets(MakeLeafClicked, nk_root);
+                    commands.trigger(MakeLeafClicked::new(nk_root));
                 }
             }
         }
@@ -158,7 +158,7 @@ pub fn handle_node_action(
         NodeAction::ResetRegion => {
             // Call into core: fire ResetMachine on the selected machine root
             if let Some(root) = target_machine {
-                commands.trigger_targets(bevy_gearbox::ResetRegion, root);
+                commands.trigger(bevy_gearbox::ResetRegion::new(root));
             }
         }
         NodeAction::Delete => {

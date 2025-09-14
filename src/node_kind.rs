@@ -27,24 +27,31 @@ pub struct NodeKindParent;
 #[derive(Component)]
 pub struct NodeKindParallel;
 
-// Events that drive NodeKind transitions
-#[derive(SimpleTransition, Event, Clone)]
-pub struct AddChildClicked;
+// Events that drive NodeKind transitions (entity-targeted at the NodeKind machine root)
+#[derive(SimpleTransition, EntityEvent, Clone)]
+pub struct AddChildClicked(Entity);
 
-#[derive(SimpleTransition, Event, Clone)]
-pub struct ChildAdded;
+#[derive(SimpleTransition, EntityEvent, Clone)]
+pub struct ChildAdded(Entity);
 
-#[derive(SimpleTransition, Event, Clone)]
-pub struct AllChildrenRemoved;
+#[derive(SimpleTransition, EntityEvent, Clone)]
+pub struct AllChildrenRemoved(Entity);
 
-#[derive(SimpleTransition, Event, Clone)]
-pub struct MakeParallelClicked;
+#[derive(SimpleTransition, EntityEvent, Clone)]
+pub struct MakeParallelClicked(Entity);
 
-#[derive(SimpleTransition, Event, Clone)]
-pub struct MakeParentClicked;
+#[derive(SimpleTransition, EntityEvent, Clone)]
+pub struct MakeParentClicked(Entity);
 
-#[derive(SimpleTransition, Event, Clone)]
-pub struct MakeLeafClicked;
+#[derive(SimpleTransition, EntityEvent, Clone)]
+pub struct MakeLeafClicked(Entity);
+
+impl AddChildClicked { pub fn new(entity: Entity) -> Self { Self(entity) } }
+impl ChildAdded { pub fn new(entity: Entity) -> Self { Self(entity) } }
+impl AllChildrenRemoved { pub fn new(entity: Entity) -> Self { Self(entity) } }
+impl MakeParallelClicked { pub fn new(entity: Entity) -> Self { Self(entity) } }
+impl MakeParentClicked { pub fn new(entity: Entity) -> Self { Self(entity) } }
+impl MakeLeafClicked { pub fn new(entity: Entity) -> Self { Self(entity) } }
 
 /// Ensure there is a NodeKind machine for every editor node under the selected machine
 pub fn sync_node_kind_machines(
@@ -106,12 +113,12 @@ pub fn sync_node_kind_machines(
 
 /// On entering Parallel state: ensure editor state has Parallel marker and no InitialState
 pub fn on_enter_nodekind_state_parallel(
-    trigger: Trigger<EnterState>,
+    trigger: On<EnterState>,
     nk_for_query: Query<&NodeKindFor, With<NodeKindParallel>>,
     mut commands: Commands,
     editor_state: Res<EditorState>,
 ) {
-    let nk_state = trigger.target();
+    let nk_state = trigger.event().event_target();
     let Ok(NodeKindFor(target_state_entity)) = nk_for_query.get(nk_state) else { return; };
     let state = *target_state_entity;
     commands.entity(state).insert(bevy_gearbox::Parallel);
@@ -147,12 +154,12 @@ pub fn on_enter_nodekind_state_parallel(
 
 /// On entering Parent state: ensure Parallel marker is removed
 pub fn on_enter_nodekind_state_parent(
-    trigger: Trigger<EnterState>,
+    trigger: On<EnterState>,
     nk_for_query: Query<&NodeKindFor, With<NodeKindParent>>,
     mut commands: Commands,
     editor_state: Res<EditorState>,
 ) {
-    let nk_state = trigger.target();
+    let nk_state = trigger.event().event_target();
     let Ok(NodeKindFor(target_state_entity)) = nk_for_query.get(nk_state) else { return; };
     let state = *target_state_entity;
     commands.entity(state).remove::<bevy_gearbox::Parallel>();
@@ -188,11 +195,11 @@ pub fn on_enter_nodekind_state_parent(
 
 /// On entering Leaf state: remove Parallel and InitialState
 pub fn on_enter_nodekind_state_leaf(
-    trigger: Trigger<EnterState>,
+    trigger: On<EnterState>,
     nk_for_query: Query<&NodeKindFor, With<NodeKindLeaf>>,
     mut commands: Commands,
 ) {
-    let nk_state = trigger.target();
+    let nk_state = trigger.event().event_target();
     let Ok(NodeKindFor(target_state_entity)) = nk_for_query.get(nk_state) else { return; };
     let state = *target_state_entity;
     commands.entity(state).remove::<bevy_gearbox::Parallel>();
@@ -202,12 +209,12 @@ pub fn on_enter_nodekind_state_leaf(
 
 /// On entering Parent via MakeParentClicked, ensure child and set InitialState
 pub fn on_enter_nodekind_state_parent_via_make_parent(
-    trigger: Trigger<EnterState>,
+    trigger: On<EnterState>,
     nk_for_query: Query<&NodeKindFor, With<NodeKindParent>>,
     mut commands: Commands,
     editor_state: Res<EditorState>,
 ) {
-    let nk_state = trigger.target();
+    let nk_state = trigger.event().event_target();
     let Ok(NodeKindFor(target_state_entity)) = nk_for_query.get(nk_state) else { return; };
     let state = *target_state_entity;
     // Find which machine to use (simplified approach)
@@ -239,12 +246,12 @@ pub fn on_enter_nodekind_state_parent_via_make_parent(
 
 /// When a state loses its StateChildren component (no more children), demote to Leaf
 pub fn on_remove_state_children(
-    trigger: Trigger<OnRemove, bevy_gearbox::StateChildren>,
+    trigger: On<Remove, bevy_gearbox::StateChildren>,
     editor_state: Res<EditorState>,
     mut q: Query<&mut crate::editor_state::StateMachineTransientData, With<StateMachine>>,
     mut commands: Commands,
 ) {
-    let parent = trigger.target();
+    let parent = trigger.event().entity;
     // Find which machine to use (simplified approach)
     let root = if let Some(open_machine) = editor_state.open_machines.first() {
         open_machine.entity
@@ -253,5 +260,5 @@ pub fn on_remove_state_children(
     };
     let Ok(transient) = q.get_mut(root) else { return; };
     let Some(&nk_root) = transient.node_kind_roots.get(&parent) else { return; };
-    commands.trigger_targets(AllChildrenRemoved, nk_root);
+    commands.trigger(AllChildrenRemoved::new(nk_root));
 }

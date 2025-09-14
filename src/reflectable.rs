@@ -296,7 +296,7 @@ fn determine_node_type(entity: Entity, world: &World) -> ReflectableNodeType {
 }
 
 pub(crate) fn on_add_reflectable_state_machine(
-    trigger: Trigger<OnAdd, ReflectableStateMachinePersistentData>,
+    trigger: On<OnAdd, ReflectableStateMachinePersistentData>,
     query: Query<&ReflectableStateMachinePersistentData>,
     mut commands: Commands,
 ) {

@@ -10,13 +10,13 @@ keywords = ["bevy", "state-machine", "gamedev", "ecs"]
 categories = ["game-development", "game-engines"]
 
 [dependencies]
-bevy = "0.16.1"
+bevy = "=0.17.0-rc.1"
 bevy-inspector-egui = "0.32.0"
-bevy_asset = "0.16.1"
-bevy_ecs = "0.16.1"
+bevy_asset = "=0.17.0-rc.1"
+bevy_ecs = "=0.17.0-rc.1"
 bevy_egui = "0.35.1"
 bevy_gearbox = { path = "../bevy_gearbox" }
-bevy_reflect = "0.16.1"
+bevy_reflect = "=0.17.0-rc.1"
 disqualified = "1.0.0"
 egui = "0.31.1"
 smallvec = "1.15.1"
