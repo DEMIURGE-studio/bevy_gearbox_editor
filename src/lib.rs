@@ -525,10 +525,6 @@ fn handle_transition_actions_pulse(
     let Ok((Source(source), Target(target))) = edge_q.get(edge) else { return; };
     let root = child_of_q.root_ancestor(*source);
     if let Ok(mut transient) = state_machines.get_mut(root) {
-        info!(
-            "[Editor] Pulse add (actions): root={:?} edge={:?} source={:?} target={:?}",
-            root, edge, source, target
-        );
         transient.transition_pulses.push(TransitionPulse::new(*source, *target, edge));
     }
 }
