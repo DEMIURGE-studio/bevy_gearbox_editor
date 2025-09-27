@@ -90,8 +90,6 @@ pub fn show_single_machine_on_canvas(
     editor_state: &mut EditorState,
     persistent_data: &mut StateMachinePersistentData,
     transient_data: &mut StateMachineTransientData,
-    machine_entity: Entity,
-    _machine_name: &str,
     all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
     q_child_of: &Query<&bevy_gearbox::StateChildOf>,
     q_children: &Query<&bevy_gearbox::StateChildren>,
@@ -105,7 +103,6 @@ pub fn show_single_machine_on_canvas(
         editor_state,
         persistent_data,
         transient_data,
-        machine_entity,
         all_entities,
         q_child_of,
         q_children,
@@ -118,7 +115,6 @@ pub fn show_single_machine_on_canvas(
 /// Render the content of a state machine (nodes, transitions, etc.)
 fn render_machine_content(
     ui: &mut egui::Ui,
-    _editor_state: &mut EditorState,
     persistent_data: &mut StateMachinePersistentData,
     transient_data: &mut StateMachineTransientData,
     selected_root: Entity,

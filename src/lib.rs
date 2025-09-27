@@ -164,8 +164,6 @@ fn editor_ui_system(
                         &mut editor_state,
                         &mut persistent_data,
                         &mut transient_data,
-                        open_machine.entity,
-                        &open_machine.display_name,
                         &q_entities,
                         &q_child_of,
                         &q_children,
