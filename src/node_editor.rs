@@ -21,26 +21,26 @@ use crate::components::{NodeType, LeafNode, ParentNode};
 /// and parent nodes back to leaf nodes when they lose all children.
 pub fn update_node_types(
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
-    parent_query: Query<Entity, With<InitialState>>,
-    leaf_query: Query<Entity, Without<InitialState>>,
-    children_query: Query<&bevy_gearbox::StateChildren>,
-    parallel_query: Query<Entity, With<bevy_gearbox::Parallel>>,
+    mut q_sm: Query<&mut StateMachinePersistentData, With<StateMachine>>,
+    q_parent: Query<Entity, With<InitialState>>,
+    q_leaf: Query<Entity, Without<InitialState>>,
+    q_children: Query<&bevy_gearbox::StateChildren>,
+    q_parallel: Query<Entity, With<bevy_gearbox::Parallel>>,
 ) {
     // Update node types for all open machines
     for open_machine in &editor_state.open_machines {
-        if let Ok(mut machine_data) = state_machines.get_mut(open_machine.entity) {
+        if let Ok(mut machine_data) = q_sm.get_mut(open_machine.entity) {
             let selected_root = open_machine.entity;
         
         // Get all entities in the selected state machine's hierarchy
-        let mut descendants: Vec<Entity> = children_query
+        let mut descendants: Vec<Entity> = q_children
             .iter_descendants_depth_first(selected_root)
             .collect();
         descendants.insert(0, selected_root); // Include the root
         
         // Process each entity in the hierarchy
         for &entity in &descendants {
-            if parent_query.contains(entity) || parallel_query.contains(entity) {
+            if q_parent.contains(entity) || q_parallel.contains(entity) {
                 // Entity should be a parent node
                 match machine_data.nodes.get(&entity) {
                     Some(NodeType::Parent(_)) => {
@@ -57,7 +57,7 @@ pub fn update_node_types(
                         machine_data.nodes.insert(entity, NodeType::Parent(parent_node));
                     }
                 }
-            } else if leaf_query.contains(entity) {
+            } else if q_leaf.contains(entity) {
                 // Entity should be a leaf node
                 match machine_data.nodes.get(&entity) {
                     Some(NodeType::Leaf(_)) => {
@@ -93,10 +93,10 @@ pub fn show_single_machine_on_canvas(
     machine_entity: Entity,
     _machine_name: &str,
     all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
-    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
-    children_query: &Query<&bevy_gearbox::StateChildren>,
-    active_query: &Query<&Active>,
-    parallel_query: &Query<&bevy_gearbox::Parallel>,
+    q_child_of: &Query<&bevy_gearbox::StateChildOf>,
+    q_children: &Query<&bevy_gearbox::StateChildren>,
+    q_active: &Query<&Active>,
+    q_parallel: &Query<&bevy_gearbox::Parallel>,
     commands: &mut Commands,
 ) {
     // Render the machine content directly on the canvas without any container frame
@@ -107,45 +107,12 @@ pub fn show_single_machine_on_canvas(
         transient_data,
         machine_entity,
         all_entities,
-        child_of_query,
-        children_query,
-        active_query,
-        parallel_query,
+        q_child_of,
+        q_children,
+        q_active,
+        q_parallel,
         commands,
     );
-}
-
-/// Render the node editor interface for a selected state machine (legacy single-machine approach)
-pub fn show_machine_editor(
-    ctx: &egui::Context,
-    _editor_state: &mut EditorState,
-    _persistent_data: &mut StateMachinePersistentData,
-    transient_data: &mut StateMachineTransientData,
-    _all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
-    _child_of_query: &Query<&bevy_gearbox::StateChildOf>,
-    _children_query: &Query<&bevy_gearbox::StateChildren>,
-    _active_query: &Query<&Active>,
-    _parallel_query: &Query<&bevy_gearbox::Parallel>,
-    _commands: &mut Commands,
-) {
-    egui::CentralPanel::default().show(ctx, |ui| {
-        // Add back button and save button at the top
-        ui.horizontal(|ui| {
-            if ui.button("← Back to Machine List").clicked() {
-                // For legacy compatibility, we'll keep this but it won't do much
-                // since we're moving to the canvas approach
-                transient_data.selected_node = None;
-            }
-            
-            // Legacy single-machine display - this will be rarely used now
-            ui.label("Legacy Single Machine View");
-        });
-        
-        ui.separator();
-        
-        // For now, just show a message directing users to use Ctrl+O
-        ui.label("Use Ctrl+O to open the new multi-machine canvas editor.");
-    });
 }
 
 /// Render the content of a state machine (nodes, transitions, etc.)
@@ -156,17 +123,17 @@ fn render_machine_content(
     transient_data: &mut StateMachineTransientData,
     selected_root: Entity,
     all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
-    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
-    children_query: &Query<&bevy_gearbox::StateChildren>,
-    active_query: &Query<&Active>,
-    parallel_query: &Query<&bevy_gearbox::Parallel>,
+    q_child_of: &Query<&bevy_gearbox::StateChildOf>,
+    q_children: &Query<&bevy_gearbox::StateChildren>,
+    q_active: &Query<&Active>,
+    q_parallel: &Query<&bevy_gearbox::Parallel>,
     commands: &mut Commands,
 ) {
     // Build render queue with z-order based on hierarchy depth
     let mut render_queue = Vec::new();
     
     // Get all entities in depth-first order for natural z-ordering
-    let mut hierarchy_entities: Vec<Entity> = children_query
+    let mut hierarchy_entities: Vec<Entity> = q_children
         .iter_descendants_depth_first(selected_root)
         .collect();
     hierarchy_entities.insert(0, selected_root);
@@ -174,7 +141,7 @@ fn render_machine_content(
     for (hierarchy_index, entity) in hierarchy_entities.iter().enumerate() {
         if let Some(_node) = persistent_data.nodes.get(entity) {
             let base_z_order = hierarchy_index as i32 * 10;
-            let selection_boost = if should_get_selection_boost(*entity, transient_data.selected_node, child_of_query) { 
+            let selection_boost = if should_get_selection_boost(*entity, transient_data.selected_node, q_child_of) { 
                 5 
             } else { 
                 0 
@@ -204,11 +171,11 @@ fn render_machine_content(
             let first_focus = transient_data.text_editing.first_focus;
             
             // Determine node color (active solid gold, else gold->grey pulse)
-            let node_color = Some(get_node_display_color(entity, active_query, &transient_data.node_pulses));
+            let node_color = Some(get_node_display_color(entity, q_active, &transient_data.node_pulses));
             
             let response = match node {
                 NodeType::Leaf(leaf_node) => {
-                    let dotted = is_direct_child_of_parallel(entity, child_of_query, parallel_query);
+                    let dotted = is_direct_child_of_parallel(entity, q_child_of, q_parallel);
                     leaf_node.show_with_border_style(
                         ui, 
                         &entity_name, 
@@ -223,7 +190,7 @@ fn render_machine_content(
                     )
                 }
                 NodeType::Parent(parent_node) => {
-                    let dotted = is_direct_child_of_parallel(entity, child_of_query, parallel_query);
+                    let dotted = is_direct_child_of_parallel(entity, q_child_of, q_parallel);
                     parent_node.show_with_border_style(
                         ui, 
                         &entity_name, 
@@ -290,10 +257,10 @@ fn render_machine_content(
     }
     
     // Update transition rectangles before rendering
-    update_transition_rectangles(persistent_data, child_of_query);
+    update_transition_rectangles(persistent_data, q_child_of);
     
     // Render transition arrows after all nodes
-    render_transition_connections(ui, persistent_data, transient_data, child_of_query, commands);
+    render_transition_connections(ui, persistent_data, transient_data, q_child_of, commands);
     
     // Render initial state indicators
     render_initial_state_indicators(ui, persistent_data, &all_entities, selected_root);
@@ -412,7 +379,7 @@ fn render_transition_connections(
     ui: &mut egui::Ui,
     persistent_data: &mut StateMachinePersistentData,
     transient_data: &StateMachineTransientData,
-    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+    q_child_of: &Query<&bevy_gearbox::StateChildOf>,
     commands: &mut Commands,
 ) {
     // Extract data needed for rendering to avoid borrowing issues
@@ -436,7 +403,7 @@ fn render_transition_connections(
     for (index, (source_start, source_end, target_start, target_end), event_pos, _event_type, _is_dragging, _color) in &transitions_data {
         let tconn = &persistent_data.visual_transitions[*index];
         let source_rect = tconn.source_rect;
-        let is_ancestor = is_ancestor_of(tconn.source_entity, tconn.target_entity, child_of_query);
+        let is_ancestor = is_ancestor_of(tconn.source_entity, tconn.target_entity, q_child_of);
         if is_ancestor {
             // Curved segment from parent to event node, straight segment from event node to target
             draw_fish_hook_to_point(&painter, source_rect, *event_pos, egui::Color32::WHITE);
@@ -493,11 +460,11 @@ fn render_transition_connections(
 
 fn is_direct_child_of_parallel(
     entity: Entity,
-    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
-    parallel_query: &Query<&bevy_gearbox::Parallel>,
+    q_child_of: &Query<&bevy_gearbox::StateChildOf>,
+    q_parallel: &Query<&bevy_gearbox::Parallel>,
 ) -> bool {
-    if let Ok(child_of) = child_of_query.get(entity) {
-        return parallel_query.get(child_of.0).is_ok();
+    if let Ok(child_of) = q_child_of.get(entity) {
+        return q_parallel.get(child_of.0).is_ok();
     }
     false
 }
@@ -505,7 +472,7 @@ fn is_direct_child_of_parallel(
 /// Update the rectangles in visual transitions to match current node positions
 fn update_transition_rectangles(
     persistent_data: &mut StateMachinePersistentData,
-    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+    q_child_of: &Query<&bevy_gearbox::StateChildOf>,
 ) {
     // Snapshot node rects first to avoid borrow conflicts
     let mut node_rects: std::collections::HashMap<Entity, egui::Rect> = std::collections::HashMap::new();
@@ -521,7 +488,7 @@ fn update_transition_rectangles(
         if !transition.is_dragging_event_node {
             transition.update_event_node_position();
             // Constrain while auto-moving due to connected state movement
-            constrain_event_node_position(transition, &node_rects, child_of_query);
+            constrain_event_node_position(transition, &node_rects, q_child_of);
         }
     }
 }
@@ -529,15 +496,15 @@ fn update_transition_rectangles(
 fn constrain_event_node_position(
     transition: &mut crate::TransitionConnection,
     node_rects: &std::collections::HashMap<Entity, egui::Rect>,
-    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+    q_child_of: &Query<&bevy_gearbox::StateChildOf>,
 ) {
     // Determine which end is higher in the hierarchy
-    let source_depth = hierarchy_depth_from_pairs(transition.source_entity, child_of_query);
-    let target_depth = hierarchy_depth_from_pairs(transition.target_entity, child_of_query);
+    let source_depth = hierarchy_depth_from_pairs(transition.source_entity, q_child_of);
+    let target_depth = hierarchy_depth_from_pairs(transition.target_entity, q_child_of);
     let higher = if source_depth <= target_depth { transition.source_entity } else { transition.target_entity };
     let other = if higher == transition.source_entity { transition.target_entity } else { transition.source_entity };
-    let is_direct_child = match child_of_query.get(other) { Ok(rel) => rel.0 == higher, Err(_) => false };
-    let parent_for_pill = if is_direct_child { higher } else if let Ok(rel) = child_of_query.get(higher) { rel.0 } else { higher };
+    let is_direct_child = match q_child_of.get(other) { Ok(rel) => rel.0 == higher, Err(_) => false };
+    let parent_for_pill = if is_direct_child { higher } else if let Ok(rel) = q_child_of.get(higher) { rel.0 } else { higher };
     if let Some(parent_rect) = node_rects.get(&parent_for_pill) {
         // Reconstruct an approximate ParentNode content rect assumptions are required here;
         // since we only stored the whole rect, approximate content by shrinking top bar and margins
@@ -759,9 +726,9 @@ fn draw_dashed_arrow(painter: &egui::Painter, start: egui::Pos2, end: egui::Pos2
     );
 }
 
-fn is_ancestor_of(source: Entity, target: Entity, child_of_query: &Query<&bevy_gearbox::StateChildOf>) -> bool {
+fn is_ancestor_of(source: Entity, target: Entity, q_child_of: &Query<&bevy_gearbox::StateChildOf>) -> bool {
     let mut current = target;
-    while let Ok(child_of) = child_of_query.get(current) {
+    while let Ok(child_of) = q_child_of.get(current) {
         if child_of.0 == source {
             return true;
         }
@@ -828,9 +795,9 @@ fn cubic_bezier_point(p0: egui::Pos2, p1: egui::Pos2, p2: egui::Pos2, p3: egui::
     egui::Pos2::new(x, y)
 }
 
-fn hierarchy_depth_from_pairs(mut entity: Entity, child_of_query: &Query<&bevy_gearbox::StateChildOf>) -> usize {
+fn hierarchy_depth_from_pairs(mut entity: Entity, q_child_of: &Query<&bevy_gearbox::StateChildOf>) -> usize {
     let mut depth = 0;
-    while let Ok(rel) = child_of_query.get(entity) {
+    while let Ok(rel) = q_child_of.get(entity) {
         depth += 1;
         entity = rel.0;
     }

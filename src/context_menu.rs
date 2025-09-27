@@ -63,8 +63,8 @@ pub fn handle_node_action(
     trigger: On<NodeActionTriggered>,
     mut commands: Commands,
     mut editor_state: ResMut<EditorState>,
-    mut state_machines: Query<(&mut StateMachinePersistentData, &mut StateMachineTransientData), With<StateMachine>>,
-    name_query: Query<&Name>,
+    mut q_sm: Query<(&mut StateMachinePersistentData, &mut StateMachineTransientData), With<StateMachine>>,
+    q_name: Query<&Name>,
 ) {
     let event = trigger.event();
     
@@ -81,7 +81,7 @@ pub fn handle_node_action(
         return;
     };
     
-    let Ok((mut persistent_data, mut transient_data)) = state_machines.get_mut(selected_machine) else {
+    let Ok((mut persistent_data, mut transient_data)) = q_sm.get_mut(selected_machine) else {
         return;
     };
     
@@ -112,7 +112,7 @@ pub fn handle_node_action(
 
             // Notify NodeKind machine for this parent
             let parent_entity = event.entity;
-            if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
+            if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&parent_entity) {
                     commands.trigger(AddChildClicked::new(nk_root));
                     commands.trigger(crate::node_kind::ChildAdded::new(nk_root));
@@ -120,13 +120,13 @@ pub fn handle_node_action(
             }
         }
         NodeAction::Rename => {
-            let entity_name = name_query.get(event.entity).unwrap().to_string();
+            let entity_name = q_name.get(event.entity).unwrap().to_string();
             transient_data.text_editing.start_editing(event.entity, &entity_name);
         }
         NodeAction::MakeParallel => {
             // Notify NodeKind machine to handle Parallel transition
             let state_entity = event.entity;
-            if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
+            if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
                     commands.trigger(MakeParallelClicked::new(nk_root));
                 }
@@ -135,7 +135,7 @@ pub fn handle_node_action(
         NodeAction::MakeParent => {
             // Ask NK to become Parent from any current kind
             let state_entity = event.entity;
-            if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
+            if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
                     commands.trigger(MakeParentClicked::new(nk_root));
                 }
@@ -144,7 +144,7 @@ pub fn handle_node_action(
         NodeAction::MakeLeaf => {
             // Ask NK to become Leaf from any current kind
             let state_entity = event.entity;
-            if let Ok(transient) = state_machines.get_mut(selected_machine).map(|(_, t)| t) {
+            if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
                     commands.trigger(MakeLeafClicked::new(nk_root));
                 }
@@ -178,8 +178,8 @@ pub fn render_context_menu(
     editor_state: &mut EditorState,
     commands: &mut Commands,
     all_entities: &Query<(Entity, Option<&Name>, Option<&bevy_gearbox::InitialState>)>,
-    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
-    parallel_query: &Query<&bevy_gearbox::Parallel>,
+    q_child_of: &Query<&bevy_gearbox::StateChildOf>,
+    q_parallel: &Query<&bevy_gearbox::Parallel>,
 ) {
     if let (Some(entity), Some(position)) = (editor_state.context_menu_entity, editor_state.context_menu_position) {
         let menu_id = egui::Id::new("context_menu").with(entity);
@@ -216,7 +216,7 @@ pub fn render_context_menu(
 
                         // Determine type of node (Leaf/Parent/Parallel/Root)
                         let is_parent = all_entities.get(entity).ok().and_then(|(_,_,init)| init.map(|_|())).is_some();
-                        let is_parallel = parallel_query.get(entity).is_ok();
+                        let is_parallel = q_parallel.get(entity).is_ok();
                         let is_leaf = !is_parent && !is_parallel;
                         let is_root = editor_state.open_machines.iter().any(|m| m.entity == entity);
 
@@ -325,7 +325,7 @@ pub fn render_context_menu(
                         }
 
                         // Child of a parent: Set as Initial State
-                        if let Ok(child_of) = child_of_query.get(entity) {
+                        if let Ok(child_of) = q_child_of.get(entity) {
                             let parent_has_initial = all_entities
                                 .get(child_of.0)
                                 .ok()

@@ -22,24 +22,24 @@ use crate::StateMachinePersistentData;
 /// This observer recursively moves all children when a parent is dragged,
 /// maintaining relative positions throughout the hierarchy.
 pub fn handle_parent_child_movement(
-    trigger: On<NodeDragged>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
-    child_of_query: Query<&bevy_gearbox::StateChildOf>,
-    children_query: Query<&bevy_gearbox::StateChildren>,
+    trigger: Trigger<NodeDragged>,
+    mut q_sm: Query<&mut StateMachinePersistentData, With<StateMachine>>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
+    q_children: Query<&bevy_gearbox::StateChildren>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
     
     // Find which machine contains the dragged entity
-    let selected_machine = child_of_query.root_ancestor(event.entity);
+    let selected_machine = q_child_of.root_ancestor(event.entity);
     
     // Get the machine data for the selected state machine
-    let Ok(mut machine_data) = state_machines.get_mut(selected_machine) else {
+    let Ok(mut machine_data) = q_sm.get_mut(selected_machine) else {
         return;
     };
     
     // Get all entities that have the dragged entity as their parent
-    let Ok(children) = children_query.get(event.entity) else {
+    let Ok(children) = q_children.get(event.entity) else {
         return;
     };
     
@@ -74,26 +74,26 @@ pub fn handle_parent_child_movement(
 /// but can move right and down freely (which will trigger parent expansion).
 pub fn constrain_children_to_parents(
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
-    child_of_query: Query<&bevy_gearbox::StateChildOf>,
-    children_query: Query<&bevy_gearbox::StateChildren>,
+    mut q_sm: Query<&mut StateMachinePersistentData, With<StateMachine>>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
+    q_children: Query<&bevy_gearbox::StateChildren>,
 ) {
     // Process each open machine separately
     for open_machine in &editor_state.open_machines {
-        let Ok(mut machine_data) = state_machines.get_mut(open_machine.entity) else {
+        let Ok(mut machine_data) = q_sm.get_mut(open_machine.entity) else {
             continue;
         };
     
         // Process all parent nodes in this machine
         let parent_entities: Vec<Entity> = machine_data.nodes.keys()
-            .filter(|&&entity| children_query.contains(entity))
+            .filter(|&&entity| q_children.contains(entity))
             .copied()
             .collect();
         
         for parent_entity in parent_entities {
-            if let Ok(children) = children_query.get(parent_entity) {
+            if let Ok(children) = q_children.get(parent_entity) {
                 for child_entity in children.iter() {
-                    constrain_child_to_parent(child_entity, &mut machine_data, &child_of_query);
+                    constrain_child_to_parent(child_entity, &mut machine_data, &q_child_of);
                 }
             }
         }
@@ -109,13 +109,13 @@ pub fn constrain_children_to_parents(
 
         for t in machine_data.visual_transitions.iter_mut() {
             // Determine which end is higher in the hierarchy
-            let source_depth = hierarchy_depth(t.source_entity, &child_of_query);
-            let target_depth = hierarchy_depth(t.target_entity, &child_of_query);
+            let source_depth = hierarchy_depth(t.source_entity, &q_child_of);
+            let target_depth = hierarchy_depth(t.target_entity, &q_child_of);
             let higher = if source_depth <= target_depth { t.source_entity } else { t.target_entity };
             let other = if higher == t.source_entity { t.target_entity } else { t.source_entity };
             // Exception: direct Parent->Child connections contain by parent; else parent of higher (or higher if root)
-            let is_direct_child = match child_of_query.get(other) { Ok(rel) => rel.0 == higher, Err(_) => false };
-            let parent_for_pill = if is_direct_child { higher } else if let Ok(rel) = child_of_query.get(higher) { rel.0 } else { higher };
+            let is_direct_child = match q_child_of.get(other) { Ok(rel) => rel.0 == higher, Err(_) => false };
+            let parent_for_pill = if is_direct_child { higher } else if let Ok(rel) = q_child_of.get(higher) { rel.0 } else { higher };
 
             if let Some(content_rect) = parent_content_rects.get(&parent_for_pill).copied() {
                 let margin = egui::Vec2::new(10.0, 10.0);
@@ -143,9 +143,9 @@ pub fn constrain_children_to_parents(
 fn constrain_child_to_parent(
     child_entity: Entity,
     machine_data: &mut StateMachinePersistentData,
-    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+    q_child_of: &Query<&bevy_gearbox::StateChildOf>,
 ) {
-    if let Ok(child_of) = child_of_query.get(child_entity) {
+    if let Ok(child_of) = q_child_of.get(child_entity) {
         if let Some(parent_node) = machine_data.nodes.get(&child_of.0) {
             if let NodeType::Parent(parent) = parent_node {
                 if let Some(child_node) = machine_data.nodes.get(&child_entity) {
@@ -185,13 +185,13 @@ fn constrain_child_to_parent(
 /// This uses a bottom-up approach, processing leaf nodes first, then their parents.
 pub fn recalculate_parent_sizes(
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
-    children_query: Query<&bevy_gearbox::StateChildren>,
-    child_of_query: Query<&bevy_gearbox::StateChildOf>,
+    mut q_sm: Query<&mut StateMachinePersistentData, With<StateMachine>>,
+    q_children: Query<&bevy_gearbox::StateChildren>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
 ) {
     // Process each open machine separately
     for open_machine in &editor_state.open_machines {
-        let Ok(mut machine_data) = state_machines.get_mut(open_machine.entity) else {
+        let Ok(mut machine_data) = q_sm.get_mut(open_machine.entity) else {
             continue;
         };
         
@@ -200,14 +200,14 @@ pub fn recalculate_parent_sizes(
         // Preassign transition pills to a parent based on the higher endpoint in the hierarchy
         let mut transition_rects_by_parent: HashMap<Entity, Vec<egui::Rect>> = HashMap::new();
         for t in &machine_data.visual_transitions {
-            let source_depth = hierarchy_depth(t.source_entity, &child_of_query);
-            let target_depth = hierarchy_depth(t.target_entity, &child_of_query);
+            let source_depth = hierarchy_depth(t.source_entity, &q_child_of);
+            let target_depth = hierarchy_depth(t.target_entity, &q_child_of);
             let higher = if source_depth <= target_depth { t.source_entity } else { t.target_entity };
             let other = if higher == t.source_entity { t.target_entity } else { t.source_entity };
             // Exception: for direct Parent->Child connections, contain by the parent itself
-            let is_direct_child = match child_of_query.get(other) { Ok(rel) => rel.0 == higher, Err(_) => false };
+            let is_direct_child = match q_child_of.get(other) { Ok(rel) => rel.0 == higher, Err(_) => false };
             // Otherwise, use the higher's parent if it exists; fallback to higher (root)
-            let parent_for_pill = if is_direct_child { higher } else if let Ok(rel) = child_of_query.get(higher) { rel.0 } else { higher };
+            let parent_for_pill = if is_direct_child { higher } else if let Ok(rel) = q_child_of.get(higher) { rel.0 } else { higher };
             // Approximate pill rect around the event node position
             let pill_size = egui::Vec2::new(90.0, 24.0);
             let pill_rect = egui::Rect::from_center_size(t.event_node_position, pill_size);
@@ -227,11 +227,11 @@ pub fn recalculate_parent_sizes(
                     continue;
                 }
                 
-                if let Ok(children) = children_query.get(parent_entity) {
+                if let Ok(children) = q_children.get(parent_entity) {
                     // Check if all children have been processed (or are leaf nodes)
                     let all_children_ready = children.into_iter().all(|&child| {
                         processed_entities.contains(&child) || 
-                        !children_query.contains(child) // Leaf nodes (no children)
+                        !q_children.contains(child) // Leaf nodes (no children)
                     });
                     
                     if all_children_ready {
@@ -263,9 +263,9 @@ pub fn recalculate_parent_sizes(
     }
 }
 
-fn hierarchy_depth(mut entity: Entity, child_of_query: &Query<&bevy_gearbox::StateChildOf>) -> usize {
+fn hierarchy_depth(mut entity: Entity, q_child_of: &Query<&bevy_gearbox::StateChildOf>) -> usize {
     let mut depth = 0;
-    while let Ok(rel) = child_of_query.get(entity) {
+    while let Ok(rel) = q_child_of.get(entity) {
         depth += 1;
         entity = rel.0;
     }

@@ -81,14 +81,14 @@ fn input_system(
 
 // Emits OnRepeat/OnComplete when entering a state with Repeater
 fn on_enter_repeating_emit_events(
-    trigger: On<EnterState>,
-    mut repeater_q: Query<&mut Repeater>,
-    child_of_q: Query<&StateChildOf>,
+    trigger: Trigger<EnterState>,
+    mut q_repeater: Query<&mut Repeater>,
+    q_child_of: Query<&StateChildOf>,
     mut commands: Commands,
 ) {
     let state = trigger.target();
-    let Ok(mut repeater) = repeater_q.get_mut(state) else { return; };
-    let root = child_of_q.root_ancestor(state);
+    let Ok(mut repeater) = q_repeater.get_mut(state) else { return; };
+    let root = q_child_of.root_ancestor(state);
     repeater.remaining -= 1;
     if repeater.remaining > 0 {
         commands.trigger_targets(OnRepeat, root);
@@ -98,14 +98,14 @@ fn on_enter_repeating_emit_events(
 }
 
 fn reset_repeater(
-    trigger: On<Reset>,
-    mut repeater_q: Query<&mut Repeater>,
+    trigger: Trigger<Reset>,
+    mut q_repeater: Query<&mut Repeater>,
 ) {
     let state = trigger.target();
 
     println!("Resetting repeater for state: {:?}", state);
 
-    let Ok(mut repeater) = repeater_q.get_mut(state) else { return; };
+    let Ok(mut repeater) = q_repeater.get_mut(state) else { return; };
     repeater.remaining = repeater.initial;
 }
 
