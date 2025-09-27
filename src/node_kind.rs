@@ -50,7 +50,7 @@ pub struct MakeLeafClicked;
 pub fn sync_node_kind_machines(
     editor_state: Res<EditorState>,
     mut commands: Commands,
-    mut state_machines: Query<(&StateMachinePersistentData, &mut crate::editor_state::StateMachineTransientData), With<StateMachine>>,    
+    mut q_sm: Query<(&StateMachinePersistentData, &mut crate::editor_state::StateMachineTransientData), With<StateMachine>>,    
 ) {
     // Find which machine to use (simplified approach)
     let root = if let Some(open_machine) = editor_state.open_machines.first() {
@@ -58,7 +58,7 @@ pub fn sync_node_kind_machines(
     } else {
         return;
     };
-    let Ok((persistent, mut transient)) = state_machines.get_mut(root) else { return; };
+    let Ok((persistent, mut transient)) = q_sm.get_mut(root) else { return; };
 
     for (&state_entity, _node) in persistent.nodes.iter() {
         if transient.node_kind_roots.contains_key(&state_entity) { continue; }
@@ -107,12 +107,12 @@ pub fn sync_node_kind_machines(
 /// On entering Parallel state: ensure editor state has Parallel marker and no InitialState
 pub fn on_enter_nodekind_state_parallel(
     trigger: Trigger<EnterState>,
-    nk_for_query: Query<&NodeKindFor, With<NodeKindParallel>>,
+    q_nk_for: Query<&NodeKindFor, With<NodeKindParallel>>,
     mut commands: Commands,
     editor_state: Res<EditorState>,
 ) {
     let nk_state = trigger.target();
-    let Ok(NodeKindFor(target_state_entity)) = nk_for_query.get(nk_state) else { return; };
+    let Ok(NodeKindFor(target_state_entity)) = q_nk_for.get(nk_state) else { return; };
     let state = *target_state_entity;
     commands.entity(state).insert(bevy_gearbox::Parallel);
     commands.entity(state).remove::<bevy_gearbox::InitialState>();
@@ -148,12 +148,12 @@ pub fn on_enter_nodekind_state_parallel(
 /// On entering Parent state: ensure Parallel marker is removed
 pub fn on_enter_nodekind_state_parent(
     trigger: Trigger<EnterState>,
-    nk_for_query: Query<&NodeKindFor, With<NodeKindParent>>,
+    q_nk_for: Query<&NodeKindFor, With<NodeKindParent>>,
     mut commands: Commands,
     editor_state: Res<EditorState>,
 ) {
     let nk_state = trigger.target();
-    let Ok(NodeKindFor(target_state_entity)) = nk_for_query.get(nk_state) else { return; };
+    let Ok(NodeKindFor(target_state_entity)) = q_nk_for.get(nk_state) else { return; };
     let state = *target_state_entity;
     commands.entity(state).remove::<bevy_gearbox::Parallel>();
 
@@ -189,11 +189,11 @@ pub fn on_enter_nodekind_state_parent(
 /// On entering Leaf state: remove Parallel and InitialState
 pub fn on_enter_nodekind_state_leaf(
     trigger: Trigger<EnterState>,
-    nk_for_query: Query<&NodeKindFor, With<NodeKindLeaf>>,
+    q_nk_for: Query<&NodeKindFor, With<NodeKindLeaf>>,
     mut commands: Commands,
 ) {
     let nk_state = trigger.target();
-    let Ok(NodeKindFor(target_state_entity)) = nk_for_query.get(nk_state) else { return; };
+    let Ok(NodeKindFor(target_state_entity)) = q_nk_for.get(nk_state) else { return; };
     let state = *target_state_entity;
     commands.entity(state).remove::<bevy_gearbox::Parallel>();
     commands.entity(state).remove::<bevy_gearbox::InitialState>();
@@ -203,12 +203,12 @@ pub fn on_enter_nodekind_state_leaf(
 /// On entering Parent via MakeParentClicked, ensure child and set InitialState
 pub fn on_enter_nodekind_state_parent_via_make_parent(
     trigger: Trigger<EnterState>,
-    nk_for_query: Query<&NodeKindFor, With<NodeKindParent>>,
+    q_nk_for: Query<&NodeKindFor, With<NodeKindParent>>,
     mut commands: Commands,
     editor_state: Res<EditorState>,
 ) {
     let nk_state = trigger.target();
-    let Ok(NodeKindFor(target_state_entity)) = nk_for_query.get(nk_state) else { return; };
+    let Ok(NodeKindFor(target_state_entity)) = q_nk_for.get(nk_state) else { return; };
     let state = *target_state_entity;
     // Find which machine to use (simplified approach)
     let root = if let Some(open_machine) = editor_state.open_machines.first() {

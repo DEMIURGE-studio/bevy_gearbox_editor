@@ -119,19 +119,19 @@ impl Plugin for GearboxEditorPlugin {
 /// System to render the main editor UI
 /// Only runs when an editor window exists
 fn editor_ui_system(
-    mut editor_context: Query<&mut EguiContext, (With<EditorWindow>, Without<bevy_egui::PrimaryEguiContext>)>,
+    mut q_editor_context: Query<&mut EguiContext, (With<EditorWindow>, Without<bevy_egui::PrimaryEguiContext>)>,
     mut editor_state: ResMut<EditorState>,
-    mut state_machines: Query<(Entity, Option<&Name>, Option<&mut StateMachinePersistentData>, Option<&mut StateMachineTransientData>), With<StateMachine>>,
-    machine_list_query: Query<(Entity, Option<&Name>), With<StateMachine>>,
-    all_entities: Query<(Entity, Option<&Name>, Option<&InitialState>)>,
-    child_of_query: Query<&bevy_gearbox::StateChildOf>,
-    children_query: Query<&bevy_gearbox::StateChildren>,
-    active_query: Query<&bevy_gearbox::active::Active>,
-    parallel_query: Query<&bevy_gearbox::Parallel>,
+    mut q_sm_data: Query<(Entity, Option<&Name>, Option<&mut StateMachinePersistentData>, Option<&mut StateMachineTransientData>), With<StateMachine>>,
+    q_sm: Query<(Entity, Option<&Name>), With<StateMachine>>,
+    q_entities: Query<(Entity, Option<&Name>, Option<&InitialState>)>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
+    q_children: Query<&bevy_gearbox::StateChildren>,
+    q_active: Query<&bevy_gearbox::active::Active>,
+    q_parallel: Query<&bevy_gearbox::Parallel>,
     mut commands: Commands,
 ) {
     // Only run if there's an editor window
-    if let Ok(mut egui_context) = editor_context.single_mut() {
+    if let Ok(mut egui_context) = q_editor_context.single_mut() {
         let ctx = egui_context.get_mut();
         
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -140,7 +140,7 @@ fn editor_ui_system(
             
             // Render each open machine directly on the canvas
             for open_machine in &editor_state.open_machines.clone() {
-                if let Ok((_, _, persistent_data_opt, transient_data_opt)) = state_machines.get_mut(open_machine.entity) {
+                if let Ok((_, _, persistent_data_opt, transient_data_opt)) = q_sm_data.get_mut(open_machine.entity) {
                     // Ensure the machine has both components
                     if persistent_data_opt.is_none() {
                         commands.entity(open_machine.entity).insert(StateMachinePersistentData::default());
@@ -151,7 +151,7 @@ fn editor_ui_system(
                         continue;
                     }
                     
-                    let (_, _, Some(mut persistent_data), Some(mut transient_data)) = state_machines.get_mut(open_machine.entity).unwrap() else {
+                    let (_, _, Some(mut persistent_data), Some(mut transient_data)) = q_sm_data.get_mut(open_machine.entity).unwrap() else {
                         continue;
                     };
                     
@@ -166,11 +166,11 @@ fn editor_ui_system(
                         &mut transient_data,
                         open_machine.entity,
                         &open_machine.display_name,
-                        &all_entities,
-                        &child_of_query,
-                        &children_query,
-                        &active_query,
-                        &parallel_query,
+                        &q_entities,
+                        &q_child_of,
+                        &q_children,
+                        &q_active,
+                        &q_parallel,
                         &mut commands,
                     );
                     
@@ -184,16 +184,16 @@ fn editor_ui_system(
                 ctx,
                 &mut editor_state,
                 &mut commands,
-                &all_entities,
-                &child_of_query,
-                &parallel_query,
+                &q_entities,
+                &q_child_of,
+                &q_parallel,
             );
             
             // Render background context menu
             render_background_context_menu(
                 ctx,
                 &mut editor_state,
-                &machine_list_query,
+                &q_machine_list,
                 &mut commands,
             );
         });
@@ -220,7 +220,7 @@ fn embedded_world_inspector_exclusive(world: &mut World) {
 fn handle_transition_creation_request(
     trigger: Trigger<TransitionCreationRequested>,
     editor_state: Res<EditorState>,
-    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
+    mut q_sm: Query<&mut StateMachineTransientData, With<StateMachine>>,
     type_registry: Res<AppTypeRegistry>,
 ) {
     let event = trigger.event();
@@ -238,7 +238,7 @@ fn handle_transition_creation_request(
         return;
     };
     
-    let Ok(mut transient_data) = state_machines.get_mut(selected_machine) else {
+    let Ok(mut transient_data) = q_sm.get_mut(selected_machine) else {
         return;
     };
     
@@ -253,7 +253,7 @@ fn handle_transition_creation_request(
 fn handle_create_transition(
     trigger: Trigger<CreateTransition>,
     editor_state: Res<EditorState>,
-    mut state_machines: Query<(&mut StateMachineTransientData, &mut StateMachinePersistentData), With<StateMachine>>,
+    mut q_sm: Query<(&mut StateMachineTransientData, &mut StateMachinePersistentData), With<StateMachine>>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
@@ -269,7 +269,7 @@ fn handle_create_transition(
         return;
     };
     
-    let Ok((mut transient_data, mut persistent_data)) = state_machines.get_mut(selected_machine) else {
+    let Ok((mut transient_data, mut persistent_data)) = q_sm.get_mut(selected_machine) else {
         return;
     };
     
@@ -451,17 +451,17 @@ fn handle_save_state_machine(
 /// Observer to handle transition deletion requests
 fn handle_delete_transition(
     trigger: Trigger<DeleteTransition>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
-    child_of_query: Query<&bevy_gearbox::StateChildOf>,
+    mut q_sm: Query<&mut StateMachinePersistentData, With<StateMachine>>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
     
     // Find the state machine root that contains the source entity
-    let root = child_of_query.root_ancestor(event.source_entity);
+    let root = q_child_of.root_ancestor(event.source_entity);
     
     // Remove the visual transition from persistent data
-    if let Ok(mut persistent_data) = state_machines.get_mut(root) {
+    if let Ok(mut persistent_data) = q_sm.get_mut(root) {
         persistent_data.visual_transitions.retain(|transition| {
             !(transition.source_entity == event.source_entity &&
                 transition.target_entity == event.target_entity &&
@@ -517,28 +517,24 @@ fn handle_delete_transition(
 /// Observer to create pulses from the universal TransitionActions edge event
 fn handle_transition_actions_pulse(
     trigger: Trigger<bevy_gearbox::TransitionActions>,
-    edge_q: Query<(&Source, &Target)>,
-    child_of_q: Query<&bevy_gearbox::StateChildOf>,
-    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
+    q_edge: Query<(&Source, &Target)>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
+    mut q_sm: Query<&mut StateMachineTransientData, With<StateMachine>>,
 ) {
     let edge = trigger.target();
-    let Ok((Source(source), Target(target))) = edge_q.get(edge) else { return; };
-    let root = child_of_q.root_ancestor(*source);
-    if let Ok(mut transient) = state_machines.get_mut(root) {
-        info!(
-            "[Editor] Pulse add (actions): root={:?} edge={:?} source={:?} target={:?}",
-            root, edge, source, target
-        );
+    let Ok((Source(source), Target(target))) = q_edge.get(edge) else { return; };
+    let root = q_child_of.root_ancestor(*source);
+    if let Ok(mut transient) = q_sm.get_mut(root) {
         transient.transition_pulses.push(TransitionPulse::new(*source, *target, edge));
     }
 }
 
 /// System to update transition pulse timers and remove expired pulses
 fn update_transition_pulses(
-    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
+    mut q_sm: Query<&mut StateMachineTransientData, With<StateMachine>>,
     time: Res<Time>,
 ) {
-    for mut transient_data in state_machines.iter_mut() {
+    for mut transient_data in q_sm.iter_mut() {
         // Update all pulse timers
         for pulse in transient_data.transition_pulses.iter_mut() {
             pulse.timer.tick(time.delta());
@@ -552,22 +548,22 @@ fn update_transition_pulses(
 /// Observer to track EnterState events and create node pulses
 fn handle_node_enter_pulse(
     trigger: Trigger<bevy_gearbox::EnterState>,
-    child_of_query: Query<&bevy_gearbox::StateChildOf>,
-    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
+    mut q_sm: Query<&mut StateMachineTransientData, With<StateMachine>>,
 ) {
     let state = trigger.target();
-    let root = child_of_query.root_ancestor(state);
-    if let Ok(mut transient) = state_machines.get_mut(root) {
+    let root = q_child_of.root_ancestor(state);
+    if let Ok(mut transient) = q_sm.get_mut(root) {
         transient.node_pulses.push(NodePulse::new(state));
     }
 }
 
 /// System to update node pulse timers and remove expired pulses
 fn update_node_pulses(
-    mut state_machines: Query<&mut StateMachineTransientData, With<StateMachine>>,
+    mut q_sm: Query<&mut StateMachineTransientData, With<StateMachine>>,
     time: Res<Time>,
 ) {
-    for mut transient in state_machines.iter_mut() {
+    for mut transient in q_sm.iter_mut() {
         for pulse in transient.node_pulses.iter_mut() {
             pulse.timer.tick(time.delta());
         }
@@ -578,15 +574,15 @@ fn update_node_pulses(
 /// Observer to handle node deletion with all edge cases
 fn handle_delete_node(
     trigger: Trigger<DeleteNode>,
-    mut state_machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
-    state_child_of_query: Query<&bevy_gearbox::StateChildOf>,
+    mut q_sm: Query<&mut StateMachinePersistentData, With<StateMachine>>,
+    q_state_child_of: Query<&bevy_gearbox::StateChildOf>,
     mut commands: Commands,
 ) {
     let event = trigger.event();
     let entity_to_delete = event.entity;
 
     // Find the state machine root that contains this entity
-    let root = state_child_of_query.root_ancestor(entity_to_delete);
+    let root = q_state_child_of.root_ancestor(entity_to_delete);
 
     // Don't allow deleting the root state machine itself
     if entity_to_delete == root {
@@ -594,7 +590,7 @@ fn handle_delete_node(
         return;
     }
 
-    let Ok(mut persistent_data) = state_machines.get_mut(root) else {
+    let Ok(mut persistent_data) = q_sm.get_mut(root) else {
         warn!("⚠️ Could not find persistent data for state machine root {:?}", root);
         return;
     };
@@ -626,66 +622,66 @@ fn handle_delete_node(
 fn sync_edge_visuals_from_ecs(
     editor_state: Res<EditorState>,
     mut machines: Query<&mut StateMachinePersistentData, With<StateMachine>>,
-    edges_q: Query<(Entity, &Source, &Target)>,
-    names_q: Query<&Name>,
-    child_of_q: Query<&bevy_gearbox::StateChildOf>,
+    q_edges: Query<(Entity, &Source, &Target)>,
+    q_names: Query<&Name>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
 ) {
     // Sync edges for all open machines
     for open_machine in &editor_state.open_machines {
         let selected_root = open_machine.entity;
         let Ok(mut persistent) = machines.get_mut(selected_root) else { continue; };
 
-    // Build a set of current edges under this root
-    let mut seen_edges = HashSet::new();
+        // Build a set of current edges under this root
+        let mut seen_edges = HashSet::new();
 
-    // Snapshot node rects to avoid borrow conflicts
-    let mut node_rects = HashMap::new();
-    for (entity, node) in &persistent.nodes {
-        node_rects.insert(*entity, node.current_rect());
-    }
-
-    // Ensure each ECS edge has a visual entry; update rects and label
-    for (edge, source, target) in &edges_q {
-        if child_of_q.root_ancestor(source.0) != selected_root { continue; }
-        seen_edges.insert(edge);
-
-        // Compute rects if available
-        let (Some(source_rect), Some(target_rect)) = (
-            node_rects.get(&source.0).copied(),
-            node_rects.get(&target.0).copied(),
-        ) else { continue; };
-
-        // Derive display label from Name or fallback to ID
-        let label = if let Ok(n) = names_q.get(edge) { n.as_str().to_string() } else { format!("{:?}", edge) };
-
-        // Find existing visual or create a new one
-        if let Some(vt) = persistent.visual_transitions.iter_mut().find(|t| t.edge_entity == edge) {
-            vt.source_entity = source.0;
-            vt.target_entity = target.0;
-            vt.source_rect = source_rect;
-            vt.target_rect = target_rect;
-            vt.event_type = label;
-            if !vt.is_dragging_event_node {
-                vt.update_event_node_position();
-            }
-        } else {
-            let midpoint = egui::Pos2::new(
-                (source_rect.center().x + target_rect.center().x) / 2.0,
-                (source_rect.center().y + target_rect.center().y) / 2.0,
-            );
-            persistent.visual_transitions.push(TransitionConnection {
-                source_entity: source.0,
-                edge_entity: edge,
-                target_entity: target.0,
-                event_type: label,
-                source_rect,
-                target_rect,
-                event_node_position: midpoint,
-                is_dragging_event_node: false,
-                event_node_offset: egui::Vec2::ZERO,
-            });
+        // Snapshot node rects to avoid borrow conflicts
+        let mut node_rects = HashMap::new();
+        for (entity, node) in &persistent.nodes {
+            node_rects.insert(*entity, node.current_rect());
         }
-    }
+
+        // Ensure each ECS edge has a visual entry; update rects and label
+        for (edge, source, target) in &q_edges {
+            if q_child_of.root_ancestor(source.0) != selected_root { continue; }
+            seen_edges.insert(edge);
+
+            // Compute rects if available
+            let (Some(source_rect), Some(target_rect)) = (
+                node_rects.get(&source.0).copied(),
+                node_rects.get(&target.0).copied(),
+            ) else { continue; };
+
+            // Derive display label from Name or fallback to ID
+            let label = if let Ok(n) = q_names.get(edge) { n.as_str().to_string() } else { format!("{:?}", edge) };
+
+            // Find existing visual or create a new one
+            if let Some(vt) = persistent.visual_transitions.iter_mut().find(|t| t.edge_entity == edge) {
+                vt.source_entity = source.0;
+                vt.target_entity = target.0;
+                vt.source_rect = source_rect;
+                vt.target_rect = target_rect;
+                vt.event_type = label;
+                if !vt.is_dragging_event_node {
+                    vt.update_event_node_position();
+                }
+            } else {
+                let midpoint = egui::Pos2::new(
+                    (source_rect.center().x + target_rect.center().x) / 2.0,
+                    (source_rect.center().y + target_rect.center().y) / 2.0,
+                );
+                persistent.visual_transitions.push(TransitionConnection {
+                    source_entity: source.0,
+                    edge_entity: edge,
+                    target_entity: target.0,
+                    event_type: label,
+                    source_rect,
+                    target_rect,
+                    event_node_position: midpoint,
+                    is_dragging_event_node: false,
+                    event_node_offset: egui::Vec2::ZERO,
+                });
+            }
+        }
 
         // Remove visuals whose edges no longer exist
         persistent.visual_transitions.retain(|t| seen_edges.contains(&t.edge_entity));
@@ -814,7 +810,7 @@ fn remove_canvas_offset_from_nodes(persistent_data: &mut StateMachinePersistentD
 fn render_background_context_menu(
     ctx: &egui::Context,
     editor_state: &mut EditorState,
-    machine_list_query: &Query<(Entity, Option<&Name>), With<StateMachine>>,
+    q_sm: &Query<(Entity, Option<&Name>), With<StateMachine>>,
     commands: &mut Commands,
 ) {
     if let Some(position) = editor_state.background_context_menu_position {
@@ -881,7 +877,7 @@ fn render_background_context_menu(
                         ui.separator();
                         
                         let mut found_machines = false;
-                        for (entity, name_opt) in machine_list_query.iter() {
+                        for (entity, name_opt) in q_sm.iter() {
                             // Skip machines that are already open
                             if editor_state.is_machine_open(entity) {
                                 continue;
@@ -958,7 +954,7 @@ fn handle_background_context_menu_request(
 fn handle_open_machine_request(
     trigger: Trigger<OpenMachineRequested>,
     mut editor_state: ResMut<EditorState>,
-    name_query: Query<&Name>,
+    q_name: Query<&Name>,
 ) {
     let event = trigger.event();
     
@@ -967,7 +963,7 @@ fn handle_open_machine_request(
         return;
     }
     
-    let display_name = if let Ok(name) = name_query.get(event.entity) {
+    let display_name = if let Ok(name) = q_name.get(event.entity) {
         name.as_str().to_string()
     } else {
         format!("Machine {:?}", event.entity)
@@ -992,8 +988,8 @@ fn handle_close_machine_request(
 fn handle_view_related(
     trigger: Trigger<ViewRelated>,
     mut editor_state: ResMut<EditorState>,
-    name_query: Query<&Name>,
-    state_machine_query: Query<Entity, With<StateMachine>>,
+    q_name: Query<&Name>,
+    q_sm: Query<Entity, With<StateMachine>>,
 ) {
     let event = trigger.event();
     
@@ -1004,7 +1000,7 @@ fn handle_view_related(
     }
     
     // Verify that the target entity has a state machine
-    if state_machine_query.get(event.target).is_err() {
+    if q_sm.get(event.target).is_err() {
         warn!("ViewRelated target entity {:?} does not have a StateMachine component", event.target);
         return;
     }
@@ -1015,7 +1011,7 @@ fn handle_view_related(
     }
     
     // Get display name for the target
-    let display_name = if let Ok(name) = name_query.get(event.target) {
+    let display_name = if let Ok(name) = q_name.get(event.target) {
         name.as_str().to_string()
     } else {
         format!("Related {:?}", event.target)

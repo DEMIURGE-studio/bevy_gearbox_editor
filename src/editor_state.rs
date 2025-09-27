@@ -508,8 +508,8 @@ pub const NORMAL_NODE_COLOR: egui::Color32 = egui::Color32::from_rgb(60, 60, 60)
 pub const TRANSITION_COLOR: egui::Color32 = egui::Color32::WHITE;
 
 /// Calculate the color for a node based on its state
-pub fn get_node_color(entity: Entity, active_query: &Query<&Active>) -> egui::Color32 {
-    if active_query.contains(entity) {
+pub fn get_node_color(entity: Entity, q_active: &Query<&Active>) -> egui::Color32 {
+    if q_active.contains(entity) {
         ACTIVE_STATE_COLOR
     } else {
         NORMAL_NODE_COLOR
@@ -533,10 +533,10 @@ impl NodePulse {
 /// Calculate the display color for a node, blending recent activity pulses
 pub fn get_node_display_color(
     entity: Entity,
-    active_query: &Query<&Active>,
+    q_active: &Query<&Active>,
     pulses: &[NodePulse],
 ) -> egui::Color32 {
-    let is_active = active_query.contains(entity);
+    let is_active = q_active.contains(entity);
     if let Some(pulse) = pulses.iter().find(|p| p.entity == entity) {
         let t = pulse.intensity(); // 1.0 at enter, down to 0.0
         if is_active {
@@ -710,7 +710,7 @@ pub fn get_entity_name_from_world(entity: Entity, world: &mut World) -> String {
 pub fn should_get_selection_boost(
     entity: Entity,
     selected_node: Option<Entity>,
-    child_of_query: &Query<&bevy_gearbox::StateChildOf>,
+    q_child_of: &Query<&bevy_gearbox::StateChildOf>,
 ) -> bool {
     if let Some(selected) = selected_node {
         if entity == selected {
@@ -719,7 +719,7 @@ pub fn should_get_selection_boost(
         
         // Check if this entity is an ancestor of the selected node
         let mut current = selected;
-        while let Ok(child_of) = child_of_query.get(current) {
+        while let Ok(child_of) = q_child_of.get(current) {
             if child_of.0 == entity {
                 return true;
             }
