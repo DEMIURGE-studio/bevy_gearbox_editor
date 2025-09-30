@@ -18,7 +18,7 @@ Visual editor for bevy_gearbox state machines. Create states and transitions, ar
 
 ## Basic controls
 
-- Open editor window: press Ctrl+O
+- Open editor window: press Ctrl+O. Right click the editor window to open the context menu and view or create state machines!
 - Select: click a state node.
 - Create a transition: select a state, click the blue “+”, click a target state, then pick an event (or “Always”).
 - Inspect: right-click a state or a transition event pill → Inspect. The inspector allows you to view, add, and remove arbitrary reflected components. (Assuming they reflect Default)

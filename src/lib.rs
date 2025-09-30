@@ -191,7 +191,7 @@ fn editor_ui_system(
             render_background_context_menu(
                 ctx,
                 &mut editor_state,
-                &q_machine_list,
+                &q_sm,
                 &mut commands,
             );
         });

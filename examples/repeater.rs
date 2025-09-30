@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::reflect::Reflect;
+use bevy_egui::EguiPlugin;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::GearboxPlugin;
 use bevy_gearbox::transitions::{EventEdge, TransitionEventAppExt};
@@ -7,6 +8,7 @@ use bevy_gearbox::transitions::{EventEdge, TransitionEventAppExt};
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_plugins(EguiPlugin::default())
         .add_plugins(GearboxPlugin)
         .add_plugins(bevy_gearbox_editor::GearboxEditorPlugin)
         .add_systems(Startup, setup)
