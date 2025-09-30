@@ -20,6 +20,8 @@
 use bevy::prelude::*;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::GearboxPlugin;
+use bevy_egui::EguiPlugin;
+use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 
 #[derive(States, Component, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 enum ExampleState {
@@ -43,6 +45,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(GearboxPlugin)
+        .add_plugins((EguiPlugin::default(), DefaultInspectorConfigPlugin, bevy_gearbox_editor::GearboxEditorPlugin))
         .init_state::<ExampleState>()
         .add_state_bridge::<ExampleState>()
         .add_transition_event::<Start>()
@@ -59,19 +62,19 @@ fn main() {
 
 fn setup_machine(mut commands: Commands) {
     // root -> { menu, playing, paused }
-    let root = commands.spawn(ChartRoot).id();
+    let root = commands.spawn((ChartRoot, Name::new("AppStateMachine"))).id();
 
-    let menu = commands.spawn((StateChildOf(root), ExampleState::Menu)).id();
-    let playing = commands.spawn((StateChildOf(root), ExampleState::Playing)).id();
-    let paused = commands.spawn((StateChildOf(root), ExampleState::Paused)).id();
+    let menu = commands.spawn((StateChildOf(root), ExampleState::Menu, Name::new("Menu"))).id();
+    let playing = commands.spawn((StateChildOf(root), ExampleState::Playing, Name::new("Playing"))).id();
+    let paused = commands.spawn((StateChildOf(root), ExampleState::Paused, Name::new("Paused"))).id();
 
     // Initial state is Menu
     commands.entity(root).insert((StateMachine::new(), InitialState(menu)));
 
     // Edges
-    commands.spawn((Source(menu), Target(playing), EventEdge::<Start>::default()));
-    commands.spawn((Source(playing), Target(paused), EventEdge::<Pause>::default()));
-    commands.spawn((Source(paused), Target(playing), EventEdge::<Resume>::default()));
+    commands.spawn((Name::new("Start"), Source(menu), Target(playing), EventEdge::<Start>::default()));
+    commands.spawn((Name::new("Pause"), Source(playing), Target(paused), EventEdge::<Pause>::default()));
+    commands.spawn((Name::new("Resume"), Source(paused), Target(playing), EventEdge::<Resume>::default()));
 }
 
 fn demo_input(

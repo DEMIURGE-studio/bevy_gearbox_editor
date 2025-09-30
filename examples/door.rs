@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::transitions::{Source, After, DeferEvent};
 use bevy_gearbox::GearboxPlugin;
-use bevy_inspector_egui::bevy_egui::EguiPlugin;
+use bevy_egui::EguiPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use std::time::Duration;
 use bevy_gearbox::StateChildOf;
@@ -12,6 +12,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins(GearboxPlugin)
         .add_plugins(EguiPlugin::default())
+        .add_plugins(bevy_gearbox_editor::GearboxEditorPlugin)
         .add_plugins(WorldInspectorPlugin::new())
         .add_systems(Startup, setup)
         .add_systems(Update, input_system)
@@ -116,7 +117,7 @@ fn setup(mut commands: Commands) {
 
         // Set up transitions - immediate event-driven transitions, then After delays
         world.entity_mut(closed_to_opening).insert((
-            Name::new("Closed -> Opening (RequestOpen)"),
+            Name::new("RequestOpen"),
             Target(opening),
             EventEdge::<RequestOpen>::default(),
             EdgeKind::External,
@@ -124,14 +125,15 @@ fn setup(mut commands: Commands) {
         ));
 
         world.entity_mut(opening_to_open).insert((
-            Name::new("Opening -> Open (After 1s)"),
+            Name::new("Always"),
             Target(open),
             Source(opening),
             After { duration: Duration::from_secs(1) }, // 1 second opening delay
+            AlwaysEdge,
         ));
 
         world.entity_mut(open_to_closing).insert((
-            Name::new("Open -> Closing (RequestClose)"),
+            Name::new("RequestClose"),
             Target(closing),
             EventEdge::<RequestClose>::default(),
             EdgeKind::External,
@@ -139,14 +141,15 @@ fn setup(mut commands: Commands) {
         ));
 
         world.entity_mut(closing_to_closed).insert((
-            Name::new("Closing -> Closed (After 1s)"),
+            Name::new("Always"),
             Target(closed),
             Source(closing),
             After { duration: Duration::from_secs(1) }, // 1 second closing delay
+            AlwaysEdge,
         ));
 
         world.entity_mut(closing_to_opening).insert((
-            Name::new("Closing -> Opening (RequestOpen)"),
+            Name::new("RequestOpen"),
             Target(opening),
             EventEdge::<RequestOpen>::default(),
             EdgeKind::External,
