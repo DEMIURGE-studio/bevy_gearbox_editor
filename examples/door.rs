@@ -182,15 +182,15 @@ fn input_system(
 
 
 /// Debug system to print messages when states are entered.
-fn print_enter_state_messages(trigger: Trigger<EnterState>, query: Query<&Name>) {
-    if let Ok(name) = query.get(trigger.target()) {
+fn print_enter_state_messages(enter_state: On<EnterState>, query: Query<&Name>) {
+    if let Ok(name) = query.get(enter_state.target) {
         println!("[STATE ENTERED]: {}", name);
     }
 }
 
 /// Debug system to print messages when states are exited.
-fn print_exit_state_messages(trigger: Trigger<ExitState>, query: Query<&Name>) {
-    if let Ok(name) = query.get(trigger.target()) {
+fn print_exit_state_messages(exit_state: On<ExitState>, query: Query<&Name>) {
+    if let Ok(name) = query.get(exit_state.target) {
         println!("[STATE EXITED]: {}", name);
     }
 }

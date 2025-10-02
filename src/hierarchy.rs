@@ -22,16 +22,14 @@ use crate::StateMachinePersistentData;
 /// This observer recursively moves all children when a parent is dragged,
 /// maintaining relative positions throughout the hierarchy.
 pub fn handle_parent_child_movement(
-    trigger: Trigger<NodeDragged>,
+    node_dragged: On<NodeDragged>,
     mut q_sm: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     q_child_of: Query<&bevy_gearbox::StateChildOf>,
     q_children: Query<&bevy_gearbox::StateChildren>,
     mut commands: Commands,
-) {
-    let event = trigger.event();
-    
+) {    
     // Find which machine contains the dragged entity
-    let selected_machine = q_child_of.root_ancestor(event.entity);
+    let selected_machine = q_child_of.root_ancestor(node_dragged.entity);
     
     // Get the machine data for the selected state machine
     let Ok(mut machine_data) = q_sm.get_mut(selected_machine) else {
@@ -39,7 +37,7 @@ pub fn handle_parent_child_movement(
     };
     
     // Get all entities that have the dragged entity as their parent
-    let Ok(children) = q_children.get(event.entity) else {
+    let Ok(children) = q_children.get(node_dragged.entity) else {
         return;
     };
     
@@ -48,17 +46,17 @@ pub fn handle_parent_child_movement(
         if let Some(child_node) = machine_data.nodes.get_mut(&child_entity) {
             match child_node {
                 NodeType::Leaf(leaf_node) => {
-                    leaf_node.entity_node.position += event.drag_delta;
+                    leaf_node.entity_node.position += node_dragged.drag_delta;
                 }
                 NodeType::Parent(parent_node) => {
-                    parent_node.entity_node.position += event.drag_delta;
+                    parent_node.entity_node.position += node_dragged.drag_delta;
                 }
             }
             
             // 🔄 Recursively trigger NodeDragged for this child to move its children
             commands.trigger(NodeDragged {
                 entity: child_entity,
-                drag_delta: event.drag_delta,
+                drag_delta: node_dragged.drag_delta,
             });
         } else {
             warn!("  ❌ Child entity {:?} not found in editor_state.nodes", child_entity);

@@ -450,31 +450,29 @@ fn handle_save_state_machine(
 
 /// Observer to handle transition deletion requests
 fn handle_delete_transition(
-    trigger: Trigger<DeleteTransition>,
+    delete_transition: On<DeleteTransition>,
     mut q_sm: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     q_child_of: Query<&bevy_gearbox::StateChildOf>,
     mut commands: Commands,
 ) {
-    let event = trigger.event();
-    
     // Find the state machine root that contains the source entity
-    let root = q_child_of.root_ancestor(event.source_entity);
+    let root = q_child_of.root_ancestor(delete_transition.source_entity);
     
     // Remove the visual transition from persistent data
     if let Ok(mut persistent_data) = q_sm.get_mut(root) {
         persistent_data.visual_transitions.retain(|transition| {
-            !(transition.source_entity == event.source_entity &&
-                transition.target_entity == event.target_entity &&
-                transition.event_type == event.event_type)
+            !(transition.source_entity == delete_transition.source_entity &&
+                transition.target_entity == delete_transition.target_entity &&
+                transition.event_type == delete_transition.event_type)
         });
     } else {
         warn!("⚠️ Could not find state machine persistent data for root {:?}", root);
     }
     
     // Remove the corresponding edge entity and update Transitions on the source
-    let source_entity = event.source_entity;
-    let target_entity = event.target_entity;
-    let event_type = event.event_type.clone();
+    let source_entity = delete_transition.source_entity;
+    let target_entity = delete_transition.target_entity;
+    let event_type = delete_transition.event_type.clone();
     commands.queue(move |world: &mut World| {
         let registry = world.resource::<AppTypeRegistry>().clone();
         let registry = registry.read();
@@ -541,17 +539,17 @@ fn update_transition_pulses(
         }
         
         // Remove finished pulses
-        transient_data.transition_pulses.retain(|pulse| !pulse.timer.finished());
+        transient_data.transition_pulses.retain(|pulse| !pulse.timer.is_finished());
     }
 }
 
 /// Observer to track EnterState events and create node pulses
 fn handle_node_enter_pulse(
-    trigger: Trigger<bevy_gearbox::EnterState>,
+    enter_state: On<bevy_gearbox::EnterState>,
     q_child_of: Query<&bevy_gearbox::StateChildOf>,
     mut q_sm: Query<&mut StateMachineTransientData, With<StateMachine>>,
 ) {
-    let state = trigger.target();
+    let state = enter_state.target;
     let root = q_child_of.root_ancestor(state);
     if let Ok(mut transient) = q_sm.get_mut(root) {
         transient.node_pulses.push(NodePulse::new(state));
@@ -567,19 +565,18 @@ fn update_node_pulses(
         for pulse in transient.node_pulses.iter_mut() {
             pulse.timer.tick(time.delta());
         }
-        transient.node_pulses.retain(|p| !p.timer.finished());
+        transient.node_pulses.retain(|p| !p.timer.is_finished());
     }
 }
 
 /// Observer to handle node deletion with all edge cases
 fn handle_delete_node(
-    trigger: Trigger<DeleteNode>,
+    delete_node: On<DeleteNode>,
     mut q_sm: Query<&mut StateMachinePersistentData, With<StateMachine>>,
     q_state_child_of: Query<&bevy_gearbox::StateChildOf>,
     mut commands: Commands,
 ) {
-    let event = trigger.event();
-    let entity_to_delete = event.entity;
+    let entity_to_delete = delete_node.entity;
 
     // Find the state machine root that contains this entity
     let root = q_state_child_of.root_ancestor(entity_to_delete);

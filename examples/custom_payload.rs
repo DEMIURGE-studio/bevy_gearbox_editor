@@ -216,15 +216,16 @@ fn setup(mut commands: Commands) {
         ));
 
         // Bounce motion: on entering Attack, add BounceTowards to shooter toward defender
-        world.entity_mut(attacking).observe(|trigger: Trigger<EnterState>,
-            child_of: Query<&StateChildOf>,
-            transforms: Query<&Transform>,
+        world.entity_mut(attacking).observe(|enter_state: On<EnterState>,
+            q_child_of: Query<&StateChildOf>,
+            q_transform: Query<&Transform>,
+            q_target: Query<&Transform, With<DummyTarget>>,
             mut commands: Commands,
             targets: Query<&Transform, With<DummyTarget>>,
         |{
-            let state = trigger.target();
-            let root = child_of.root_ancestor(state);
-            if let Ok(tf) = transforms.get(root) {
+            let state = enter_state.target;
+            let root = q_child_of.root_ancestor(state);
+            if let Ok(tf) = q_transform.get(root) {
                 // Clamp bounce distance to avoid reaching the target; anchor to starting position
                 let home = tf.translation;
                 // Try to get current target position; fall back to a fixed point
@@ -347,14 +348,14 @@ fn on_enter_taking_damage_color(
 }
 
 fn on_exit_taking_damage_color(
-    trigger: Trigger<ExitState>,
-    names: Query<&Name>,
-    child_of: Query<&StateChildOf>,
+    exit_state: On<ExitState>,
+    q_name: Query<&Name>,
+    q_child_of: Query<&StateChildOf>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut material_handles: Query<&mut MeshMaterial3d<StandardMaterial>>, 
 ) {
-    let state = trigger.target();
-    if let Ok(name) = names.get(state) {
+    let state = exit_state.target;
+    if let Ok(name) = q_name.get(state) {
         if name.as_str() != "TakingDamage" { return; }
     } else { return; }
     let root = child_of.root_ancestor(state);
@@ -455,8 +456,8 @@ fn spawn_defender(world: &mut World, position: Vec3) -> Entity {
     defender
 }
 
-fn print_enter_state(trigger: Trigger<EnterState>, names: Query<&Name>) {
-    if let Ok(name) = names.get(trigger.target()) {
+fn print_enter_state(enter_state: On<EnterState>, names: Query<&Name>) {
+    if let Ok(name) = names.get(enter_state.target) {
         println!("[EnterState] {}", name);
     }
 }
