@@ -5,8 +5,8 @@
 //! - Managing window entities and cameras
 //! - Setting up Egui contexts for multiple windows
 
+use bevy::camera::RenderTarget;
 use bevy::prelude::*;
-use bevy::render::camera::RenderTarget;
 use bevy::window::{PrimaryWindow, WindowRef, WindowResolution};
 use bevy_egui::EguiMultipassSchedule;
 
@@ -43,7 +43,7 @@ fn spawn_editor_window(commands: &mut Commands) {
     let window_entity = commands.spawn((
         Window {
             title: "Gearbox Editor".to_string(),
-            resolution: WindowResolution::new(1200.0, 800.0),
+            resolution: WindowResolution::new(1200, 800),
             ..default()
         },
         EditorWindow,
@@ -67,12 +67,12 @@ fn spawn_editor_window(commands: &mut Commands) {
 /// Clean up editor camera when its window is closed/despawned, to avoid reusing
 /// the same Egui multipass schedule with a lingering context.
 pub fn cleanup_editor_window(
-    trigger: On<Remove, Window>,
+    remove: On<Remove, Window>,
     cameras: Query<(Entity, &Camera), With<EditorWindow>>,
     mut editor_state: ResMut<crate::editor_state::EditorState>,
     mut commands: Commands,
 ) {
-    let removed_window = trigger.target();
+    let removed_window = remove.entity;
     for (cam_entity, camera) in cameras.iter() {
         if let RenderTarget::Window(WindowRef::Entity(win_entity)) = camera.target {
             if win_entity == removed_window {

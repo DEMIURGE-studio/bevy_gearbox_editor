@@ -32,14 +32,23 @@ fn main() {
 
 // --- Events reflected so they can be referenced in the scene file ---
 
-#[derive(SimpleTransition, Event, Clone, Reflect, Default)]
-struct CastAbility;
+#[derive(SimpleTransition, EntityEvent, Clone, Reflect)]
+struct CastAbility {
+    #[event_target]
+    pub target: Entity,
+}
 
-#[derive(SimpleTransition, Event, Clone, Reflect, Default)]
-struct OnRepeat;
+#[derive(SimpleTransition, EntityEvent, Clone, Reflect)]
+struct OnRepeat {
+    #[event_target]
+    pub target: Entity,
+}
 
-#[derive(SimpleTransition, Event, Clone, Reflect, Default)]
-struct OnComplete;
+#[derive(SimpleTransition, EntityEvent, Clone, Reflect)]
+struct OnComplete {
+    #[event_target]
+    pub target: Entity,
+}
 
 #[derive(Component, Reflect, Default)]
 #[reflect(Component, Default)]
@@ -71,39 +80,39 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn input_system(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    machines: Query<Entity, With<AbilityMachine>>,
+    q_machine: Query<Entity, With<AbilityMachine>>,
     mut commands: Commands,
 ) {
-    let Ok(machine) = machines.single() else { println!("No machine found"); return; };
+    let Ok(machine) = q_machine.single() else { println!("No machine found"); return; };
     if keyboard_input.just_pressed(KeyCode::KeyC) {
         println!("\n--- 'C' Pressed: Sending CastAbility event! ---");
-        commands.trigger_targets(CastAbility, machine);
+        commands.trigger(CastAbility { target: machine });
     }
 }
 
 // Emits OnRepeat/OnComplete when entering a state with Repeater
 fn on_enter_repeating_emit_events(
-    trigger: Trigger<EnterState>,
+    enter_state: On<EnterState>,
     mut q_repeater: Query<&mut Repeater>,
     q_child_of: Query<&StateChildOf>,
     mut commands: Commands,
 ) {
-    let state = trigger.target();
+    let state = enter_state.target;
     let Ok(mut repeater) = q_repeater.get_mut(state) else { return; };
     let root = q_child_of.root_ancestor(state);
     repeater.remaining -= 1;
     if repeater.remaining > 0 {
-        commands.trigger_targets(OnRepeat, root);
+        commands.trigger(OnRepeat { target: root });
     } else {
-        commands.trigger_targets(OnComplete, root);
+        commands.trigger(OnComplete { target: root });
     }
 }
 
 fn reset_repeater(
-    trigger: Trigger<Reset>,
+    reset: On<Reset>,
     mut q_repeater: Query<&mut Repeater>,
 ) {
-    let state = trigger.target();
+    let state = reset.target;
 
     println!("Resetting repeater for state: {:?}", state);
 
@@ -112,8 +121,8 @@ fn reset_repeater(
 }
 
 // Debug helpers
-fn print_enter_state_messages(trigger: On<EnterState>, names: Query<&Name>) {
-    if let Ok(name) = names.get(trigger.target()) {
+fn print_enter_state_messages(enter_state: On<EnterState>, q_name: Query<&Name>) {
+    if let Ok(name) = q_name.get(enter_state.target) {
         println!("[STATE ENTERED]: {}", name);
     }
 }

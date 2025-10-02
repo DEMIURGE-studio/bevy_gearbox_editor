@@ -29,29 +29,47 @@ pub struct NodeKindParallel;
 
 // Events that drive NodeKind transitions (entity-targeted at the NodeKind machine root)
 #[derive(SimpleTransition, EntityEvent, Clone)]
-pub struct AddChildClicked(Entity);
+pub struct AddChildClicked {
+    #[event_target]
+    pub target: Entity,
+}
 
 #[derive(SimpleTransition, EntityEvent, Clone)]
-pub struct ChildAdded(Entity);
+pub struct ChildAdded {
+    #[event_target]
+    pub target: Entity,
+}
 
 #[derive(SimpleTransition, EntityEvent, Clone)]
-pub struct AllChildrenRemoved(Entity);
+pub struct AllChildrenRemoved {
+    #[event_target]
+    pub target: Entity,
+}
 
 #[derive(SimpleTransition, EntityEvent, Clone)]
-pub struct MakeParallelClicked(Entity);
+pub struct MakeParallelClicked {
+    #[event_target]
+    pub target: Entity,
+}
 
 #[derive(SimpleTransition, EntityEvent, Clone)]
-pub struct MakeParentClicked(Entity);
+pub struct MakeParentClicked {
+    #[event_target]
+    pub target: Entity,
+}
 
 #[derive(SimpleTransition, EntityEvent, Clone)]
-pub struct MakeLeafClicked(Entity);
+pub struct MakeLeafClicked {
+    #[event_target]
+    pub target: Entity,
+}
 
-impl AddChildClicked { pub fn new(entity: Entity) -> Self { Self(entity) } }
-impl ChildAdded { pub fn new(entity: Entity) -> Self { Self(entity) } }
-impl AllChildrenRemoved { pub fn new(entity: Entity) -> Self { Self(entity) } }
-impl MakeParallelClicked { pub fn new(entity: Entity) -> Self { Self(entity) } }
-impl MakeParentClicked { pub fn new(entity: Entity) -> Self { Self(entity) } }
-impl MakeLeafClicked { pub fn new(entity: Entity) -> Self { Self(entity) } }
+impl AddChildClicked { pub fn new(entity: Entity) -> Self { Self { target: entity } } }
+impl ChildAdded { pub fn new(entity: Entity) -> Self { Self { target: entity } } }
+impl AllChildrenRemoved { pub fn new(entity: Entity) -> Self { Self { target: entity } } }
+impl MakeParallelClicked { pub fn new(entity: Entity) -> Self { Self { target: entity } } }
+impl MakeParentClicked { pub fn new(entity: Entity) -> Self { Self { target: entity } } }
+impl MakeLeafClicked { pub fn new(entity: Entity) -> Self { Self { target: entity } } }
 
 /// Ensure there is a NodeKind machine for every editor node under the selected machine
 pub fn sync_node_kind_machines(
@@ -113,12 +131,12 @@ pub fn sync_node_kind_machines(
 
 /// On entering Parallel state: ensure editor state has Parallel marker and no InitialState
 pub fn on_enter_nodekind_state_parallel(
-    trigger: Trigger<EnterState>,
+    enter_state: On<EnterState>,
     q_nk_for: Query<&NodeKindFor, With<NodeKindParallel>>,
     mut commands: Commands,
     editor_state: Res<EditorState>,
 ) {
-    let nk_state = trigger.target();
+    let nk_state = enter_state.target;
     let Ok(NodeKindFor(target_state_entity)) = q_nk_for.get(nk_state) else { return; };
     let state = *target_state_entity;
     commands.entity(state).insert(bevy_gearbox::Parallel);
@@ -154,12 +172,12 @@ pub fn on_enter_nodekind_state_parallel(
 
 /// On entering Parent state: ensure Parallel marker is removed
 pub fn on_enter_nodekind_state_parent(
-    trigger: Trigger<EnterState>,
+    enter_state: On<EnterState>,
     q_nk_for: Query<&NodeKindFor, With<NodeKindParent>>,
     mut commands: Commands,
     editor_state: Res<EditorState>,
 ) {
-    let nk_state = trigger.target();
+    let nk_state = enter_state.target;
     let Ok(NodeKindFor(target_state_entity)) = q_nk_for.get(nk_state) else { return; };
     let state = *target_state_entity;
     commands.entity(state).remove::<bevy_gearbox::Parallel>();
@@ -195,11 +213,11 @@ pub fn on_enter_nodekind_state_parent(
 
 /// On entering Leaf state: remove Parallel and InitialState
 pub fn on_enter_nodekind_state_leaf(
-    trigger: Trigger<EnterState>,
+    enter_state: On<EnterState>,
     q_nk_for: Query<&NodeKindFor, With<NodeKindLeaf>>,
     mut commands: Commands,
 ) {
-    let nk_state = trigger.target();
+    let nk_state = enter_state.target;
     let Ok(NodeKindFor(target_state_entity)) = q_nk_for.get(nk_state) else { return; };
     let state = *target_state_entity;
     commands.entity(state).remove::<bevy_gearbox::Parallel>();
@@ -209,12 +227,12 @@ pub fn on_enter_nodekind_state_leaf(
 
 /// On entering Parent via MakeParentClicked, ensure child and set InitialState
 pub fn on_enter_nodekind_state_parent_via_make_parent(
-    trigger: Trigger<EnterState>,
+    enter_state: On<EnterState>,
     q_nk_for: Query<&NodeKindFor, With<NodeKindParent>>,
     mut commands: Commands,
     editor_state: Res<EditorState>,
 ) {
-    let nk_state = trigger.target();
+    let nk_state = enter_state.target;
     let Ok(NodeKindFor(target_state_entity)) = q_nk_for.get(nk_state) else { return; };
     let state = *target_state_entity;
     // Find which machine to use (simplified approach)

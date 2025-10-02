@@ -140,7 +140,7 @@ fn editor_ui_system(
             
             // Render each open machine directly on the canvas
             for open_machine in &editor_state.open_machines.clone() {
-                if let Ok((_, _, persistent_data_opt, transient_data_opt)) = q_sm_data.get_mut(open_machine.entity) {
+                if let Ok((sm_entity, _, persistent_data_opt, transient_data_opt)) = q_sm_data.get_mut(open_machine.entity) {
                     // Ensure the machine has both components
                     if persistent_data_opt.is_none() {
                         commands.entity(open_machine.entity).insert(StateMachinePersistentData::default());
@@ -164,6 +164,7 @@ fn editor_ui_system(
                         &mut editor_state,
                         &mut persistent_data,
                         &mut transient_data,
+                        sm_entity,
                         &q_entities,
                         &q_child_of,
                         &q_children,

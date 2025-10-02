@@ -207,18 +207,19 @@ impl ReflectableStateMachinePersistentData {
     pub fn load_state_machine_from_file(
         commands: &mut Commands,
         asset_server: &AssetServer,
-        file_path: impl AsRef<Path>,
+        file_path: impl Into<String>,
     ) -> Entity {
         // Load the scene asset and spawn an entity with DynamicSceneRoot
         // This follows the same pattern as in repeater.rs
-        let scene_handle = asset_server.load(file_path.as_ref());
+        let path: String = file_path.into();
+        let scene_handle = asset_server.load(path.clone());
         
         let entity = commands.spawn((
             Name::new("State Machine (from scene)"),
             DynamicSceneRoot(scene_handle),
         )).id();
         
-        info!("✅ Loading state machine from {:?} as entity {:?}", file_path.as_ref(), entity);
+        info!("✅ Loading state machine from {:?} as entity {:?}", path, entity);
         entity
     }
 
@@ -296,11 +297,11 @@ fn determine_node_type(entity: Entity, world: &World) -> ReflectableNodeType {
 }
 
 pub(crate) fn on_add_reflectable_state_machine(
-    trigger: On<OnAdd, ReflectableStateMachinePersistentData>,
+    add: On<Add, ReflectableStateMachinePersistentData>,
     query: Query<&ReflectableStateMachinePersistentData>,
     mut commands: Commands,
 ) {
-    let entity = trigger.target();
+    let entity = add.entity;
 
     let reflectable_data = query.get(entity).unwrap();
     let persistent_data = reflectable_data.to_persistent_data();
