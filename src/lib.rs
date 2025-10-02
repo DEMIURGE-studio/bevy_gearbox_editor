@@ -515,12 +515,12 @@ fn handle_delete_transition(
 
 /// Observer to create pulses from the universal TransitionActions edge event
 fn handle_transition_actions_pulse(
-    trigger: Trigger<bevy_gearbox::TransitionActions>,
+    transition_actions: On<bevy_gearbox::TransitionActions>,
     q_edge: Query<(&Source, &Target)>,
     q_child_of: Query<&bevy_gearbox::StateChildOf>,
     mut q_sm: Query<&mut StateMachineTransientData, With<StateMachine>>,
 ) {
-    let edge = trigger.target();
+    let edge = transition_actions.target;
     let Ok((Source(source), Target(target))) = q_edge.get(edge) else { return; };
     let root = q_child_of.root_ancestor(*source);
     if let Ok(mut transient) = q_sm.get_mut(root) {

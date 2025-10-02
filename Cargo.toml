@@ -10,7 +10,13 @@ keywords = ["bevy", "state-machine", "gamedev", "ecs"]
 categories = ["game-development", "game-engines"]
 
 [dependencies]
-bevy = { version = "0.17", default-features = false, features = [] }
+bevy = { version = "0.17", default-features = false, features = [
+    "bevy_log",
+    "bevy_asset",
+    "bevy_scene",
+    "bevy_camera",
+    "bevy_window",
+] }
 bevy_asset = { version = "0.17", default-features = false, features = [] }
 bevy_ecs = { version = "0.17", default-features = false, features = [] }
 bevy_reflect = { version = "0.17", default-features = false, features = [] }
@@ -22,3 +28,6 @@ egui = "0.32.0"
 smallvec = "1.15.1"
 
 bevy_gearbox = "0.4.0"
+
+[dev-dependencies]
+bevy = "0.17"
