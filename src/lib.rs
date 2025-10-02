@@ -218,22 +218,12 @@ fn embedded_world_inspector_exclusive(world: &mut World) {
 /// Observer to handle transition creation requests
 fn handle_transition_creation_request(
     transition_creation_requested: On<TransitionCreationRequested>,
-    editor_state: Res<EditorState>,
     mut q_sm: Query<&mut StateMachineTransientData, With<StateMachine>>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
     type_registry: Res<AppTypeRegistry>,
 ) {
-    // For transition creation, we need to find which machine contains the source entity
-    // For now, we'll iterate through all open machines to find the right one
-    let mut selected_machine = None;
-    for open_machine in &editor_state.open_machines {
-        // This is a simplified check - in practice we'd need to verify the entity belongs to this machine
-        selected_machine = Some(open_machine.entity);
-        break; // For now, just use the first open machine
-    }
-    
-    let Some(selected_machine) = selected_machine else {
-        return;
-    };
+    // Resolve the state machine root via relationships
+    let selected_machine = q_child_of.root_ancestor(transition_creation_requested.source_entity);
     
     let Ok(mut transient_data) = q_sm.get_mut(selected_machine) else {
         return;
@@ -249,20 +239,12 @@ fn handle_transition_creation_request(
 /// Observer to handle transition creation with selected event type
 fn handle_create_transition(
     create_transition: On<CreateTransition>,
-    editor_state: Res<EditorState>,
     mut q_sm: Query<(&mut StateMachineTransientData, &mut StateMachinePersistentData), With<StateMachine>>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
     mut commands: Commands,
 ) {
-    // Find which machine contains the source entity
-    let mut selected_machine = None;
-    for open_machine in &editor_state.open_machines {
-        selected_machine = Some(open_machine.entity);
-        break; // For now, just use the first open machine
-    }
-    
-    let Some(selected_machine) = selected_machine else {
-        return;
-    };
+    // Resolve the state machine root via relationships
+    let selected_machine = q_child_of.root_ancestor(create_transition.source_entity);
     
     let Ok((mut transient_data, mut persistent_data)) = q_sm.get_mut(selected_machine) else {
         return;

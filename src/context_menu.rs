@@ -60,20 +60,11 @@ pub fn handle_node_action(
     mut commands: Commands,
     mut editor_state: ResMut<EditorState>,
     mut q_sm: Query<(&mut StateMachinePersistentData, &mut StateMachineTransientData), With<StateMachine>>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
     q_name: Query<&Name>,
 ) {
-    // Find which machine contains this entity
-    let mut target_machine = None;
-    for open_machine in &editor_state.open_machines {
-        // For now, we'll assume the entity belongs to the first open machine
-        // In a more sophisticated implementation, we'd traverse the hierarchy to find the root
-        target_machine = Some(open_machine.entity);
-        break;
-    }
-    
-    let Some(selected_machine) = target_machine else {
-        return;
-    };
+    // Resolve the state machine root that contains this entity
+    let selected_machine = q_child_of.root_ancestor(node_action_triggered.entity);
     
     let Ok((mut persistent_data, mut transient_data)) = q_sm.get_mut(selected_machine) else {
         return;
@@ -106,11 +97,9 @@ pub fn handle_node_action(
 
             // Notify NodeKind machine for this parent
             let parent_entity = node_action_triggered.entity;
-            if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
-                if let Some(&nk_root) = transient.node_kind_roots.get(&parent_entity) {
-                    commands.trigger(AddChildClicked::new(nk_root));
-                    commands.trigger(crate::node_kind::ChildAdded::new(nk_root));
-                }
+            if let Some(&nk_root) = transient_data.node_kind_roots.get(&parent_entity) {
+                commands.trigger(AddChildClicked::new(nk_root));
+                commands.trigger(crate::node_kind::ChildAdded::new(nk_root));
             }
         }
         NodeAction::Rename => {
@@ -120,28 +109,22 @@ pub fn handle_node_action(
         NodeAction::MakeParallel => {
             // Notify NodeKind machine to handle Parallel transition
             let state_entity = node_action_triggered.entity;
-            if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
-                if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
-                    commands.trigger(MakeParallelClicked::new(nk_root));
-                }
+            if let Some(&nk_root) = transient_data.node_kind_roots.get(&state_entity) {
+                commands.trigger(MakeParallelClicked::new(nk_root));
             }
         }
         NodeAction::MakeParent => {
             // Ask NK to become Parent from any current kind
             let state_entity = node_action_triggered.entity;
-            if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
-                if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
-                    commands.trigger(MakeParentClicked::new(nk_root));
-                }
+            if let Some(&nk_root) = transient_data.node_kind_roots.get(&state_entity) {
+                commands.trigger(MakeParentClicked::new(nk_root));
             }
         }
         NodeAction::MakeLeaf => {
             // Ask NK to become Leaf from any current kind
             let state_entity = node_action_triggered.entity;
-            if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
-                if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
-                    commands.trigger(MakeLeafClicked::new(nk_root));
-                }
+            if let Some(&nk_root) = transient_data.node_kind_roots.get(&state_entity) {
+                commands.trigger(MakeLeafClicked::new(nk_root));
             }
         }
         NodeAction::SetAsInitialState => {
@@ -151,9 +134,7 @@ pub fn handle_node_action(
         }
         NodeAction::ResetRegion => {
             // Call into core: fire ResetMachine on the selected machine root
-            if let Some(root) = target_machine {
-                commands.trigger(bevy_gearbox::ResetRegion::new(root));
-            }
+            commands.trigger(bevy_gearbox::ResetRegion::new(selected_machine));
         }
         NodeAction::Delete => {
             // Trigger the delete node event
