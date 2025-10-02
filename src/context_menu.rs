@@ -201,7 +201,7 @@ pub fn render_context_menu(
                             });
                             editor_state.context_menu_entity = None;
                             editor_state.context_menu_position = None;
-                            ui.close_menu();
+                            ui.close();
                         }
 
                         if ui.button("Rename").clicked() {
@@ -211,7 +211,7 @@ pub fn render_context_menu(
                             });
                             editor_state.context_menu_entity = None;
                             editor_state.context_menu_position = None;
-                            ui.close_menu();
+                            ui.close();
                         }
 
                         // Determine type of node (Leaf/Parent/Parallel/Root)
@@ -228,13 +228,13 @@ pub fn render_context_menu(
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeParallel });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button("Make Parent").clicked() {
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeParent });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
-                                ui.close_menu();
+                                ui.close();
                             }
                         }
 
@@ -244,14 +244,14 @@ pub fn render_context_menu(
                                 commands.trigger(SaveStateMachine { entity });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
-                                ui.close_menu();
+                                ui.close();
                             }
                             
                             if ui.button("✕ Close Machine").clicked() {
                                 commands.trigger(CloseMachineRequested { entity });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
-                                ui.close_menu();
+                                ui.close();
                             }
                             
                             ui.separator();
@@ -260,7 +260,7 @@ pub fn render_context_menu(
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::ResetRegion });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
-                                ui.close_menu();
+                                ui.close();
                             }
                         }
 
@@ -271,26 +271,26 @@ pub fn render_context_menu(
                                     commands.trigger(NodeActionTriggered { entity, action: NodeAction::ResetRegion });
                                     editor_state.context_menu_entity = None;
                                     editor_state.context_menu_position = None;
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                             }
                             if ui.button("Make Parallel").clicked() {
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeParallel });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button("Make Leaf").clicked() {
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeLeaf });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button("Add child").clicked() {
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::AddChild });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
-                                ui.close_menu();
+                                ui.close();
                             }
                         }
 
@@ -301,26 +301,26 @@ pub fn render_context_menu(
                                     commands.trigger(NodeActionTriggered { entity, action: NodeAction::ResetRegion });
                                     editor_state.context_menu_entity = None;
                                     editor_state.context_menu_position = None;
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                             }
                             if ui.button("Make Leaf").clicked() {
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeLeaf });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button("Make Parent").clicked() {
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::MakeParent });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
-                                ui.close_menu();
+                                ui.close();
                             }
                             if ui.button("Add child").clicked() {
                                 commands.trigger(NodeActionTriggered { entity, action: NodeAction::AddChild });
                                 editor_state.context_menu_entity = None;
                                 editor_state.context_menu_position = None;
-                                ui.close_menu();
+                                ui.close();
                             }
                         }
 
@@ -336,7 +336,7 @@ pub fn render_context_menu(
                                     commands.trigger(NodeActionTriggered { entity, action: NodeAction::SetAsInitialState });
                                     editor_state.context_menu_entity = None;
                                     editor_state.context_menu_position = None;
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                             }
                         }
@@ -348,7 +348,7 @@ pub fn render_context_menu(
                             });
                             editor_state.context_menu_entity = None;
                             editor_state.context_menu_position = None;
-                            ui.close_menu();
+                            ui.close();
                         }
                         // Capture the menu rect from the UI's cursor
                         last_menu_rect = Some(ui.min_rect());
@@ -418,14 +418,14 @@ pub fn render_context_menu(
                             });
                             editor_state.transition_context_menu = None;
                             editor_state.transition_context_menu_position = None;
-                            ui.close_menu();
+                            ui.close();
                         }
                         
                         if ui.button("🗑 Delete Transition").clicked() {
                             commands.trigger(DeleteTransitionByEdge { edge_entity });
                             editor_state.transition_context_menu = None;
                             editor_state.transition_context_menu_position = None;
-                            ui.close_menu();
+                            ui.close();
                         }
                         last_menu_rect = Some(ui.min_rect());
                     });
