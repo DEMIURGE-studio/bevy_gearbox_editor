@@ -21,4 +21,4 @@ disqualified = "1.0.0"
 egui = "0.32.0"
 smallvec = "1.15.1"
 
-bevy_gearbox = "0.4.0
+bevy_gearbox = "0.4.0"
