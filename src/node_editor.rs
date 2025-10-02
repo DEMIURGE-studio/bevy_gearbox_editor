@@ -87,7 +87,6 @@ pub fn update_node_types(
 /// Render a single state machine on the canvas (new multi-machine approach)
 pub fn show_single_machine_on_canvas(
     ui: &mut egui::Ui,
-    editor_state: &mut EditorState,
     persistent_data: &mut StateMachinePersistentData,
     transient_data: &mut StateMachineTransientData,
     selected_root: Entity,

@@ -21,7 +21,6 @@ mod node_editor;
 mod context_menu;
 mod window_management;
 mod entity_inspector;
-mod machine_list;
 pub mod components;
 pub mod reflectable;
 pub mod node_kind;
@@ -161,7 +160,6 @@ fn editor_ui_system(
                     // Show the machine editor directly on the main canvas
                     node_editor::show_single_machine_on_canvas(
                         ui,
-                        &mut editor_state,
                         &mut persistent_data,
                         &mut transient_data,
                         sm_entity,
