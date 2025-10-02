@@ -1,4 +1,4 @@
-use egui::{Pos2, Rect, Vec2};
+use egui::{text::CCursorRange, Pos2, Rect, Vec2};
 use super::{EntityNode, NodeResponse};
 
 /// A draggable, selectable leaf node component for terminal state machine nodes
@@ -334,14 +334,12 @@ impl LeafNode {
                 
                 // Select all text on first focus
                 if first_focus {
-                    use egui::text_selection::CursorRange;
-                    
                     // Use the built-in select_all method
-                    let select_all_range = CursorRange::select_all(&output.galley);
+                    let select_all_range = CCursorRange::select_all(&output.galley);
                     
                     // Update the cursor state
                     let mut new_state = output.state.clone();
-                    new_state.cursor.set_range(Some(select_all_range));
+                    new_state.cursor.set_char_range(Some(select_all_range));
                     
                     // Store the updated state
                     new_state.store(ui.ctx(), output.response.id);

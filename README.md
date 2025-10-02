@@ -25,13 +25,6 @@ Visual editor for bevy_gearbox state machines. Create states and transitions, ar
 - Delete: right-click → Delete.
 - Move: drag nodes by clicking and dragging.
 
-## Compatibility
-
-| Crate               | Version | Bevy |
-|---------------------|---------|------|
-| bevy_gearbox        | 0.3.3   | 0.16 |
-| bevy_gearbox_editor | 0.3.3   | 0.16 |
-
 ## See also
 
 - [`bevy_gearbox`](https://github.com/DEMIURGE-studio/bevy_gearbox) — runtime library and semantics.

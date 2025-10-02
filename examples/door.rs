@@ -55,12 +55,18 @@ struct DoorClosing;
 // --- Events ---
 
 /// Event triggered when requesting the door to open (W key)
-#[derive(SimpleTransition, Event, Clone)]
-struct RequestOpen;
+#[derive(SimpleTransition, EntityEvent, Clone)]
+struct RequestOpen {
+    #[event_target]
+    pub target: Entity,
+}
 
 /// Event triggered when requesting the door to close (E key)
-#[derive(SimpleTransition, Event, Clone)]
-struct RequestClose;
+#[derive(SimpleTransition, EntityEvent, Clone)]
+struct RequestClose {
+    #[event_target]
+    pub target: Entity,
+}
 
 /// Creates the door state machine hierarchy.
 fn setup(mut commands: Commands) {
@@ -169,13 +175,13 @@ fn input_system(
     // Press 'W' to request door open
     if keyboard_input.just_pressed(KeyCode::KeyW) {
         println!("\n--- 'W' Pressed: Request door open (RequestOpen event) ---");
-        commands.trigger_targets(RequestOpen, machine);
+        commands.trigger(RequestOpen { target: machine });
     }
     
     // Press 'E' to request door close
     if keyboard_input.just_pressed(KeyCode::KeyE) {
         println!("\n--- 'E' Pressed: Request door close (RequestClose event) ---");
-        commands.trigger_targets(RequestClose, machine);
+        commands.trigger(RequestClose { target: machine });
     }
 }
 
