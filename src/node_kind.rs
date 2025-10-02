@@ -264,12 +264,12 @@ pub fn on_enter_nodekind_state_parent_via_make_parent(
 
 /// When a state loses its StateChildren component (no more children), demote to Leaf
 pub fn on_remove_state_children(
-    trigger: On<Remove, bevy_gearbox::StateChildren>,
+    remove: On<Remove, bevy_gearbox::StateChildren>,
     editor_state: Res<EditorState>,
     mut q: Query<&mut crate::editor_state::StateMachineTransientData, With<StateMachine>>,
     mut commands: Commands,
 ) {
-    let parent = trigger.event().entity;
+    let parent = remove.entity;
     // Find which machine to use (simplified approach)
     let root = if let Some(open_machine) = editor_state.open_machines.first() {
         open_machine.entity

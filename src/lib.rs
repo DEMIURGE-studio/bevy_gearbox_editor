@@ -217,13 +217,11 @@ fn embedded_world_inspector_exclusive(world: &mut World) {
 
 /// Observer to handle transition creation requests
 fn handle_transition_creation_request(
-    trigger: On<TransitionCreationRequested>,
+    transition_creation_requested: On<TransitionCreationRequested>,
     editor_state: Res<EditorState>,
     mut q_sm: Query<&mut StateMachineTransientData, With<StateMachine>>,
     type_registry: Res<AppTypeRegistry>,
 ) {
-    let event = trigger.event();
-    
     // For transition creation, we need to find which machine contains the source entity
     // For now, we'll iterate through all open machines to find the right one
     let mut selected_machine = None;
@@ -242,7 +240,7 @@ fn handle_transition_creation_request(
     };
     
     // Start the transition creation process
-    transient_data.transition_creation.start_transition(event.source_entity);
+    transient_data.transition_creation.start_transition(transition_creation_requested.source_entity);
     
     // Discover available event types for EventEdge
     discover_transition_edge_listener_event_types(&mut transient_data.transition_creation, &type_registry);
@@ -250,13 +248,11 @@ fn handle_transition_creation_request(
 
 /// Observer to handle transition creation with selected event type
 fn handle_create_transition(
-    trigger: On<CreateTransition>,
+    create_transition: On<CreateTransition>,
     editor_state: Res<EditorState>,
     mut q_sm: Query<(&mut StateMachineTransientData, &mut StateMachinePersistentData), With<StateMachine>>,
     mut commands: Commands,
 ) {
-    let event = trigger.event();
-    
     // Find which machine contains the source entity
     let mut selected_machine = None;
     for open_machine in &editor_state.open_machines {
@@ -273,9 +269,9 @@ fn handle_create_transition(
     };
     
     // Queue the transition creation as a command
-    let source = event.source_entity;
-    let target = event.target_entity;
-    let event_type = event.event_type.clone();
+    let source = create_transition.source_entity;
+    let target = create_transition.target_entity;
+    let event_type = create_transition.event_type.clone();
 
     let edge_entity = commands.spawn_empty().id();
     
@@ -295,8 +291,8 @@ fn handle_create_transition(
     
     // Add the visual transition to the list for immediate display
     if let (Some(source_rect), Some(target_rect)) = (
-        persistent_data.nodes.get(&event.source_entity).map(|n| n.current_rect()),
-        persistent_data.nodes.get(&event.target_entity).map(|n| n.current_rect())
+        persistent_data.nodes.get(&create_transition.source_entity).map(|n| n.current_rect()),
+        persistent_data.nodes.get(&create_transition.target_entity).map(|n| n.current_rect())
     ) {
         // Position event node at midpoint between source and target initially
         let initial_event_position = egui::Pos2::new(
@@ -305,10 +301,10 @@ fn handle_create_transition(
         );
         
         persistent_data.visual_transitions.push(TransitionConnection {
-            source_entity: event.source_entity,
+            source_entity: create_transition.source_entity,
             edge_entity: edge_entity,
-            target_entity: event.target_entity,
-            event_type: event.event_type.clone(),
+            target_entity: create_transition.target_entity,
+            event_type: create_transition.event_type.clone(),
             source_rect,
             target_rect,
             event_node_position: initial_event_position,
@@ -414,13 +410,11 @@ fn create_transition_edge_entity(
 
 /// Observer to handle save state machine requests
 fn handle_save_state_machine(
-    trigger: On<SaveStateMachine>,
+    save_state_machine: On<SaveStateMachine>,
     mut commands: Commands,
 ) {
-    let event = trigger.event();
-    
     // Queue the save operation as a command to access the world
-    let entity = event.entity;
+    let entity = save_state_machine.entity;
     commands.queue(move |world: &mut World| {
         // Generate a filename based on the entity name
         let entity_name = if let Some(name) = world.get::<Name>(entity) {
@@ -686,11 +680,10 @@ fn sync_edge_visuals_from_ecs(
 
 /// Observer to handle transition deletion by edge entity
 fn handle_delete_transition_by_edge(
-    trigger: On<DeleteTransitionByEdge>,
+    delete_transition_by_edge: On<DeleteTransitionByEdge>,
     mut commands: Commands,
 ) {
-    let event = trigger.event();
-    let edge = event.edge_entity;
+    let edge = delete_transition_by_edge.edge_entity;
     commands.queue(move |world: &mut World| {
         if world.entities().contains(edge) {
             world.entity_mut(edge).despawn();
@@ -703,11 +696,10 @@ fn handle_delete_transition_by_edge(
 
 /// Observer to handle SetInitialStateRequested requests
 fn handle_set_initial_state_request(
-    trigger: On<SetInitialStateRequested>,
+    set_initial_state_requested: On<SetInitialStateRequested>,
     mut commands: Commands,
 ) {
-    let req = trigger.event();
-    let child = req.child_entity;
+    let child = set_initial_state_requested.child_entity;
     commands.queue(move |world: &mut World| {
         if let Some(child_of) = world.entity(child).get::<bevy_gearbox::StateChildOf>() {
             let parent = child_of.0;
@@ -928,10 +920,9 @@ fn render_background_context_menu(
 
 /// Observer to handle background context menu requests
 fn handle_background_context_menu_request(
-    trigger: On<BackgroundContextMenuRequested>,
+    background_context_menu_requrested: On<BackgroundContextMenuRequested>,
     mut editor_state: ResMut<EditorState>,
 ) {
-    let event = trigger.event();
     // If suppressed due to a node/transition menu opening this frame, ignore
     if editor_state.suppress_background_context_menu_once {
         editor_state.suppress_background_context_menu_once = false;
@@ -943,79 +934,74 @@ fn handle_background_context_menu_request(
     editor_state.transition_context_menu = None;
     editor_state.transition_context_menu_position = None;
     editor_state.show_machine_selection_menu = false;
-    editor_state.background_context_menu_position = Some(event.position);
+    editor_state.background_context_menu_position = Some(background_context_menu_requrested.position);
 }
 
 /// Observer to handle open machine requests
 fn handle_open_machine_request(
-    trigger: On<OpenMachineRequested>,
+    open_machine_requested: On<OpenMachineRequested>,
     mut editor_state: ResMut<EditorState>,
     q_name: Query<&Name>,
 ) {
-    let event = trigger.event();
-    
     // Don't open if already open
-    if editor_state.is_machine_open(event.entity) {
+    if editor_state.is_machine_open(open_machine_requested.entity) {
         return;
     }
     
-    let display_name = if let Ok(name) = q_name.get(event.entity) {
+    let display_name = if let Ok(name) = q_name.get(open_machine_requested.entity) {
         name.as_str().to_string()
     } else {
-        format!("Machine {:?}", event.entity)
+        format!("Machine {:?}", open_machine_requested.entity)
     };
     
-    editor_state.add_machine(event.entity, display_name);
-    info!("✅ Opened machine {:?} on canvas", event.entity);
+    editor_state.add_machine(open_machine_requested.entity, display_name);
+    info!("✅ Opened machine {:?} on canvas", open_machine_requested.entity);
 }
 
 /// Observer to handle close machine requests
 fn handle_close_machine_request(
-    trigger: On<CloseMachineRequested>,
+    close_machine_requested: On<CloseMachineRequested>,
     mut editor_state: ResMut<EditorState>,
 ) {
-    let event = trigger.event();
-    editor_state.remove_machine(event.entity);
-    info!("✅ Closed machine {:?} from canvas", event.entity);
+    editor_state.remove_machine(close_machine_requested.entity);
+    info!("✅ Closed machine {:?} from canvas", close_machine_requested.entity);
 }
 
 /// Observer to handle ViewRelated events
 /// If the origin entity is currently being viewed in the editor, automatically loads the target entity
 fn handle_view_related(
-    trigger: On<ViewRelated>,
+    view_related: On<ViewRelated>,
     mut editor_state: ResMut<EditorState>,
     q_name: Query<&Name>,
     q_sm: Query<Entity, With<StateMachine>>,
 ) {
-    let event = trigger.event();
-    
     // Check if the origin entity is currently being viewed
-    if !editor_state.is_machine_open(event.origin) {
+    if !editor_state.is_machine_open(view_related.origin) {
         // Origin is not being viewed, so don't load the target
         return;
     }
     
     // Verify that the target entity has a state machine
-    if q_sm.get(event.target).is_err() {
-        warn!("ViewRelated target entity {:?} does not have a StateMachine component", event.target);
+    if q_sm.get(view_related.target).is_err() {
+        warn!("ViewRelated target entity {:?} does not have a StateMachine component", view_related.target);
         return;
     }
     
     // Don't add if already open
-    if editor_state.is_machine_open(event.target) {
+    if editor_state.is_machine_open(view_related.target) {
         return;
     }
     
     // Get display name for the target
-    let display_name = if let Ok(name) = q_name.get(event.target) {
+    let display_name = if let Ok(name) = q_name.get(view_related.target) {
         name.as_str().to_string()
     } else {
-        format!("Related {:?}", event.target)
+        format!("Related {:?}", view_related.target)
     };
     
     // Position the related entity near its origin
     let origin_offset = editor_state.open_machines.iter()
-        .find(|m| m.entity == event.origin)
+        .find(|m| m.entity == view_related.origin)
         .map(|m| m.canvas_offset)
         .unwrap_or(egui::Vec2::ZERO);
     
@@ -1023,14 +1009,14 @@ fn handle_view_related(
     let related_offset = origin_offset + egui::Vec2::new(300.0, 100.0);
     
     // Add the related machine with the calculated offset
-    editor_state.add_machine_with_offset(event.target, display_name, related_offset);
+    editor_state.add_machine_with_offset(view_related.target, display_name, related_offset);
     
     // Track the relationship for cleanup purposes
     editor_state.related_entities
-        .entry(event.origin)
+        .entry(view_related.origin)
         .or_insert_with(Vec::new)
-        .push(event.target);
+        .push(view_related.target);
     
     info!("🔗 Auto-loaded related machine {:?} because origin {:?} is being viewed", 
-          event.target, event.origin);
+          view_related.target, view_related.origin);
 }

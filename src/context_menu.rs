@@ -18,11 +18,9 @@ use crate::node_kind::{AddChildClicked, MakeParallelClicked, MakeParentClicked, 
 /// 
 /// Renders a context menu at the requested position with available actions.
 pub fn handle_context_menu_request(
-    trigger: On<NodeContextMenuRequested>,
+    node_context_menu_requested: On<NodeContextMenuRequested>,
     mut editor_state: ResMut<EditorState>,
 ) {
-    let event = trigger.event();
-    
     // Store the context menu request in editor state for rendering
     // Mutual exclusivity: close background and transition menus
     editor_state.background_context_menu_position = None;
@@ -30,27 +28,25 @@ pub fn handle_context_menu_request(
     editor_state.transition_context_menu_position = None;
     editor_state.show_machine_selection_menu = false;
     // Open node menu
-    editor_state.context_menu_entity = Some(event.entity);
-    editor_state.context_menu_position = Some(event.position);
+    editor_state.context_menu_entity = Some(node_context_menu_requested.entity);
+    editor_state.context_menu_position = Some(node_context_menu_requested.position);
     // Suppress background menu for this frame
     editor_state.suppress_background_context_menu_once = true;
 }
 
 /// Observer to handle transition context menu requests
 pub fn handle_transition_context_menu_request(
-    trigger: On<TransitionContextMenuRequested>,
+    transition_context_menu_requested: On<TransitionContextMenuRequested>,
     mut editor_state: ResMut<EditorState>,
 ) {
-    let event = trigger.event();
-    
     // Store the transition context menu request in editor state for rendering
     // Mutual exclusivity: close background and node menus
     editor_state.background_context_menu_position = None;
     editor_state.context_menu_entity = None;
     editor_state.context_menu_position = None;
     editor_state.show_machine_selection_menu = false;
-    editor_state.transition_context_menu = Some((event.source_entity, event.target_entity, event.event_type.clone(), event.edge_entity));
-    editor_state.transition_context_menu_position = Some(event.position);
+    editor_state.transition_context_menu = Some((transition_context_menu_requested.source_entity, transition_context_menu_requested.target_entity, transition_context_menu_requested.event_type.clone(), transition_context_menu_requested.edge_entity));
+    editor_state.transition_context_menu_position = Some(transition_context_menu_requested.position);
     // Suppress background menu for this frame
     editor_state.suppress_background_context_menu_once = true;
 }
@@ -60,14 +56,12 @@ pub fn handle_transition_context_menu_request(
 /// Processes actions like Inspect and Add Child, performing the necessary
 /// entity creation and component management.
 pub fn handle_node_action(
-    trigger: On<NodeActionTriggered>,
+    node_action_triggered: On<NodeActionTriggered>,
     mut commands: Commands,
     mut editor_state: ResMut<EditorState>,
     mut q_sm: Query<(&mut StateMachinePersistentData, &mut StateMachineTransientData), With<StateMachine>>,
     q_name: Query<&Name>,
 ) {
-    let event = trigger.event();
-    
     // Find which machine contains this entity
     let mut target_machine = None;
     for open_machine in &editor_state.open_machines {
@@ -85,20 +79,20 @@ pub fn handle_node_action(
         return;
     };
     
-    match event.action {
+    match node_action_triggered.action {
         NodeAction::Inspect => {
             // Set the entity to be inspected
-            editor_state.inspected_entity = Some(event.entity);
+            editor_state.inspected_entity = Some(node_action_triggered.entity);
         }
         NodeAction::AddChild => {
             // Create a new child entity
             let child_entity = commands.spawn((
-                bevy_gearbox::StateChildOf(event.entity),
+                bevy_gearbox::StateChildOf(node_action_triggered.entity),
                 Name::new("New State"),
             )).id();
         
             // Add the child as a leaf node in the editor at an offset position
-            if let Some(parent_node) = persistent_data.nodes.get(&event.entity) {
+            if let Some(parent_node) = persistent_data.nodes.get(&node_action_triggered.entity) {
                 let parent_pos = match parent_node {
                     NodeType::Leaf(leaf_node) => leaf_node.entity_node.position,
                     NodeType::Parent(parent_node) => parent_node.entity_node.position,
@@ -111,7 +105,7 @@ pub fn handle_node_action(
             }
 
             // Notify NodeKind machine for this parent
-            let parent_entity = event.entity;
+            let parent_entity = node_action_triggered.entity;
             if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&parent_entity) {
                     commands.trigger(AddChildClicked::new(nk_root));
@@ -120,12 +114,12 @@ pub fn handle_node_action(
             }
         }
         NodeAction::Rename => {
-            let entity_name = q_name.get(event.entity).unwrap().to_string();
-            transient_data.text_editing.start_editing(event.entity, &entity_name);
+            let entity_name = q_name.get(node_action_triggered.entity).unwrap().to_string();
+            transient_data.text_editing.start_editing(node_action_triggered.entity, &entity_name);
         }
         NodeAction::MakeParallel => {
             // Notify NodeKind machine to handle Parallel transition
-            let state_entity = event.entity;
+            let state_entity = node_action_triggered.entity;
             if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
                     commands.trigger(MakeParallelClicked::new(nk_root));
@@ -134,7 +128,7 @@ pub fn handle_node_action(
         }
         NodeAction::MakeParent => {
             // Ask NK to become Parent from any current kind
-            let state_entity = event.entity;
+            let state_entity = node_action_triggered.entity;
             if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
                     commands.trigger(MakeParentClicked::new(nk_root));
@@ -143,7 +137,7 @@ pub fn handle_node_action(
         }
         NodeAction::MakeLeaf => {
             // Ask NK to become Leaf from any current kind
-            let state_entity = event.entity;
+            let state_entity = node_action_triggered.entity;
             if let Ok(transient) = q_sm.get_mut(selected_machine).map(|(_, t)| t) {
                 if let Some(&nk_root) = transient.node_kind_roots.get(&state_entity) {
                     commands.trigger(MakeLeafClicked::new(nk_root));
@@ -152,7 +146,7 @@ pub fn handle_node_action(
         }
         NodeAction::SetAsInitialState => {
             // Request parent InitialState update via event; handled centrally
-            let child_entity = event.entity;
+            let child_entity = node_action_triggered.entity;
             commands.trigger(SetInitialStateRequested { child_entity });
         }
         NodeAction::ResetRegion => {
@@ -164,7 +158,7 @@ pub fn handle_node_action(
         NodeAction::Delete => {
             // Trigger the delete node event
             commands.trigger(DeleteNode {
-                entity: event.entity,
+                entity: node_action_triggered.entity,
             });
         }
     }
