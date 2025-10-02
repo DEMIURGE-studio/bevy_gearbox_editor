@@ -12,13 +12,8 @@
           4294967351,
         ]),
         "bevy_gearbox::StateMachine": (
-          active: [
-            4294967349,
-            4294967348,
-          ],
-          active_leaves: [
-            4294967349,
-          ],
+          active: [],
+          active_leaves: [],
         ),
         "bevy_gearbox::active::Active": (),
         "bevy_gearbox_editor::reflectable::ReflectableStateMachinePersistentData": (
