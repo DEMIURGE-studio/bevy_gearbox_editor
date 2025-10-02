@@ -270,12 +270,12 @@ fn setup(mut commands: Commands) {
 //   (ApplyDamage/DoDamage) happens at the right time (Entry of target state).
 fn input_attack_event(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    q_shooter: Query<(Entity, &DamageAmount), With<Shooter>>,
+    q_shooter: Query<&DamageAmount, With<Shooter>>,
     q_dummy: Query<Entity, With<DummyTarget>>,
     mut commands: Commands,
 ) {
     if !keyboard_input.just_pressed(KeyCode::Space) { return; }
-    let Ok((machine, damage)) = q_shooter.single() else { return; };
+    let Ok(damage) = q_shooter.single() else { return; };
     let Ok(target) = q_dummy.single() else { return; };
     println!("\n-- Space: Attack -> target {:?}, damage {}", target, damage.0);
     commands.trigger(Attack { target, damage: damage.0 });
@@ -329,7 +329,7 @@ fn do_damage_on_entry(
     mut respawns: ResMut<RespawnQueue>,
 ) {
     let amount = do_damage.event().amount;
-    let taking_state = do_damage.target();
+    let taking_state = do_damage.target;
     let root = q_child_of.root_ancestor(taking_state);
     if let Ok(mut life) = q_life.get_mut(root) {
         life.0 -= amount;

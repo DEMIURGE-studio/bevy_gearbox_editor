@@ -30,8 +30,6 @@ fn main() {
         .run();
 }
 
-// --- Events reflected so they can be referenced in the scene file ---
-
 #[derive(SimpleTransition, EntityEvent, Clone, Reflect)]
 struct CastAbility {
     #[event_target]
