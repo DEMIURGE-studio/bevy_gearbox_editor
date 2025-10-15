@@ -74,10 +74,7 @@ impl Plugin for GearboxEditorPlugin {
                 update_node_pulses,
                 reflectable::sync_reflectable_on_persistent_change,
             ).chain())
-            // Derive visual transitions from ECS edges each frame (preserving offsets)
             .add_systems(Update, sync_edge_visuals_from_ecs)
-            // NodeKind dogfood state machines (event-driven creation/cleanup)
-            .add_observer(node_kind::on_open_machine_requested_sync_node_kind)
             // NodeKind event listeners
             .add_transition_event::<node_kind::AddChildClicked>()
             .add_transition_event::<node_kind::ChildAdded>()
@@ -112,7 +109,8 @@ impl Plugin for GearboxEditorPlugin {
             .add_observer(handle_background_context_menu_request)
             .add_observer(handle_open_machine_request)
             .add_observer(handle_close_machine_request)
-            .add_observer(handle_view_related);
+            .add_observer(handle_view_related)
+            .add_observer(node_kind::on_machine_nodes_populated_sync_node_kind);
     }
 }
 
@@ -135,8 +133,6 @@ fn editor_ui_system(
         let ctx = egui_context.get_mut();
         
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Background interactions are handled after node/transition UI below
-            
             // Render each open machine directly on the canvas
             for open_machine in &editor_state.open_machines.clone() {
                 if let Ok((sm_entity, _, persistent_data_opt, transient_data_opt)) = q_sm_data.get_mut(open_machine.entity) {
@@ -916,6 +912,7 @@ fn handle_open_machine_request(
     open_machine_requested: On<OpenMachineRequested>,
     mut editor_state: ResMut<EditorState>,
     q_name: Query<&Name>,
+    mut commands: Commands,
 ) {
     // Don't open if already open
     if editor_state.is_machine_open(open_machine_requested.entity) {
@@ -930,6 +927,50 @@ fn handle_open_machine_request(
     
     editor_state.add_machine(open_machine_requested.entity, display_name);
     info!("✅ Opened machine {:?} on canvas", open_machine_requested.entity);
+
+    // Ensure scaffold and emit MachineScaffoldReady(root)
+    let root = open_machine_requested.entity;
+    commands.queue(move |world: &mut World| {
+        let mut inserted_any = false;
+        if world.get::<StateMachinePersistentData>(root).is_none() {
+            world.entity_mut(root).insert(StateMachinePersistentData::default());
+            inserted_any = true;
+            info!("Cascade: inserted StateMachinePersistentData on {:?}", root);
+        }
+        if world.get::<StateMachineTransientData>(root).is_none() {
+            world.entity_mut(root).insert(StateMachineTransientData::default());
+            inserted_any = true;
+            info!("Cascade: inserted StateMachineTransientData on {:?}", root);
+        }
+        // Always emit ready; downstream is idempotent
+        world.trigger(MachineScaffoldReady { root });
+        if inserted_any {
+            info!("Cascade: MachineScaffoldReady emitted for {:?}", root);
+        }
+    });
+}
+/// Observer: after scaffold exists, populate editor nodes from hierarchy (idempotent)
+fn handle_machine_scaffold_ready(
+    ready: On<MachineScaffoldReady>,
+    q_children: Query<&bevy_gearbox::StateChildren>,
+    mut q_sm: Query<&mut StateMachinePersistentData, With<StateMachine>>,
+    mut commands: Commands,
+) {
+    let root = ready.root;
+    let Ok(mut persistent) = q_sm.get_mut(root) else { return; };
+    // Build list: root + descendants
+    let mut entities: Vec<Entity> = q_children.iter_descendants_depth_first(root).collect();
+    entities.insert(0, root);
+    let before = persistent.nodes.len();
+    for e in entities {
+        if !persistent.nodes.contains_key(&e) {
+            persistent.nodes.insert(e, crate::components::NodeType::Leaf(crate::components::LeafNode::new(egui::Pos2::new(100.0, 100.0))));
+        }
+    }
+    let after = persistent.nodes.len();
+    if after != before { info!("Cascade: populated nodes {} -> {} for root {:?}", before, after, root); }
+    // Continue cascade
+    commands.trigger(MachineNodesPopulated { root });
 }
 
 /// Observer to handle close machine requests

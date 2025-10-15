@@ -343,7 +343,7 @@ pub fn render_context_menu(
     }
     
     // Render transition context menu if requested
-    if let (Some((source, target, event_type, edge_entity)), Some(position)) = (
+    if let (Some((source, target, _, edge_entity)), Some(position)) = (
         editor_state.transition_context_menu.clone(),
         editor_state.transition_context_menu_position
     ) {
@@ -359,27 +359,7 @@ pub fn render_context_menu(
                         ui.set_min_width(120.0);
                         
                         if ui.button("Inspect").clicked() {
-                            // Resolve using the stored edge_entity in the visual model
-                            let event_type_clone = event_type.clone();
-                            commands.queue(move |world: &mut World| {
-                                // Find which machine contains this entity
-                                let mut q_state_child_of = world.query::<&bevy_gearbox::StateChildOf>();
-                                let q_child_of = q_state_child_of.query(world);
-                                let root = q_child_of.root_ancestor(edge_entity);
-                                let Some(_persistent) = world.get::<StateMachinePersistentData>(root) else {
-                                    warn!("Inspect: missing StateMachinePersistentData on root {:?}", root);
-                                    return;
-                                };
-                                let e = edge_entity;
-                                if world.entities().contains(e) {
-                                    if let Some(mut es) = world.get_resource_mut::<EditorState>() {
-                                        es.inspected_entity = Some(e);
-                                    }
-                                    info!("Inspect: set inspected_entity to edge {:?}", e);
-                                } else {
-                                    warn!("Inspect: edge {:?} no longer exists", e);
-                                }
-                            });
+                            editor_state.inspected_entity = Some(edge_entity);
                             editor_state.transition_context_menu = None;
                             editor_state.transition_context_menu_position = None;
                             ui.close();

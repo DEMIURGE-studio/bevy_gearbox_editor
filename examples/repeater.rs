@@ -4,6 +4,7 @@ use bevy_egui::EguiPlugin;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::GearboxPlugin;
 use bevy_gearbox::transitions::{EventEdge, TransitionEventAppExt};
+use bevy_inspector_egui::inspector_egui_impls::InspectorEguiImpl;
 
 fn main() {
     App::new()
@@ -21,6 +22,10 @@ fn main() {
         .add_observer(print_enter_state_messages)
         .add_observer(print_onrepeat)
         .add_observer(print_oncomplete)
+        .register_type_data::<u32, InspectorEguiImpl>()
+        .register_type_data::<u64, InspectorEguiImpl>()
+        .register_type_data::<std::borrow::Cow<str>, InspectorEguiImpl>()
+        .register_type_data::<Entity, InspectorEguiImpl>()
         .register_type::<AbilityMachine>()
         .register_type::<Repeater>()
         // ResetEdge/ResetScope are provided by core

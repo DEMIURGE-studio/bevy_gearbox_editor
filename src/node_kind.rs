@@ -6,7 +6,7 @@ use bevy_gearbox::prelude::*;
 use bevy_gearbox::transitions::{Source, Target, EventEdge};
 
 use crate::editor_state::StateMachinePersistentData;
-use crate::editor_state::{OpenMachineRequested, DeleteNode};
+use crate::editor_state::{DeleteNode, MachineNodesPopulated};
 use crate::components::{NodeType, LeafNode};
 use crate::editor_state::SetInitialStateRequested;
 
@@ -74,16 +74,18 @@ impl MakeLeafClicked { pub fn new(entity: Entity) -> Self { Self { target: entit
 
 /// Ensure there is a NodeKind machine for every editor node under the selected machine
 /// Observer: when a machine is opened on the canvas, ensure NodeKind machines exist for its nodes
-pub fn on_open_machine_requested_sync_node_kind(
-    open_machine_requested: On<OpenMachineRequested>,
+pub fn on_machine_nodes_populated_sync_node_kind(
+    populated: On<MachineNodesPopulated>,
     mut commands: Commands,
     mut q_sm: Query<(&StateMachinePersistentData, &mut crate::editor_state::StateMachineTransientData), With<StateMachine>>,    
 ) {
-    let root = open_machine_requested.entity;
+    let root = populated.root;
     let Ok((persistent, mut transient)) = q_sm.get_mut(root) else { return; };
 
     for (&state_entity, _node) in persistent.nodes.iter() {
-        if transient.node_kind_roots.contains_key(&state_entity) { continue; }
+        if transient.node_kind_roots.contains_key(&state_entity) {
+            continue;
+        }
 
         // Build a tiny machine: Root -> {Leaf, Parent, Parallel}
         let leaf = commands.spawn((Name::new("NodeKind::Leaf"), NodeKindLeaf)).id();

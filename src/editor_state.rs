@@ -466,6 +466,24 @@ pub struct CloseMachineRequested {
     pub entity: Entity,
 }
 
+/// Event fired when a machine has both persistent and transient editor scaffold ready
+#[derive(Event, Clone, Copy)]
+pub struct MachineScaffoldReady {
+    pub root: Entity,
+}
+
+/// Event fired when editor nodes have been populated for a machine
+#[derive(Event, Clone, Copy)]
+pub struct MachineNodesPopulated {
+    pub root: Entity,
+}
+
+/// Event fired when a machine is fully ready for editing (after NK build)
+#[derive(Event, Clone, Copy)]
+pub struct MachineReadyForEditing {
+    pub root: Entity,
+}
+
 /// Event fired when an entity wants to show a related entity in the editor
 /// If the origin entity is currently being viewed, the target entity will be automatically loaded
 #[derive(Event)]
