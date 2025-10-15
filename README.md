@@ -9,6 +9,10 @@ Visual editor for bevy_gearbox state machines. Create states and transitions, ar
 - Built for the [`bevy_gearbox`](https://github.com/DEMIURGE-studio/bevy_gearbox) runtime. Use both together for the best experience.
 - Author machines in the editor and load them at runtime with Bevy’s scene system.
 
+## Demo
+
+[![Watch the demo](https://img.youtube.com/vi/BPpJggyqm6E/hqdefault.jpg)](https://youtu.be/BPpJggyqm6E)
+
 ## Features
 
 - Logical hierarchy editing (independent of the scene graph).
