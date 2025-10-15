@@ -110,7 +110,8 @@ impl Plugin for GearboxEditorPlugin {
             .add_observer(handle_open_machine_request)
             .add_observer(handle_close_machine_request)
             .add_observer(handle_view_related)
-            .add_observer(node_kind::on_machine_nodes_populated_sync_node_kind);
+            .add_observer(node_kind::on_machine_nodes_populated_sync_node_kind)
+            .add_observer(handle_machine_scaffold_ready);
     }
 }
 
@@ -553,12 +554,6 @@ fn handle_delete_node(
     // Find the state machine root that contains this entity
     let root = q_state_child_of.root_ancestor(entity_to_delete);
 
-    // Don't allow deleting the root state machine itself
-    if entity_to_delete == root {
-        warn!("⚠️ Cannot delete the root state machine entity {:?}", entity_to_delete);
-        return;
-    }
-
     let Ok(mut persistent_data) = q_sm.get_mut(root) else {
         warn!("⚠️ Could not find persistent data for state machine root {:?}", root);
         return;
@@ -781,10 +776,6 @@ fn render_background_context_menu(
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_min_width(200.0);
-                    ui.heading("Canvas");
-                    ui.separator();
-                    
                     if ui.button("Open State Machine").clicked() {
                         editor_state.show_machine_selection_menu = true;
                     }
@@ -820,7 +811,7 @@ fn render_background_context_menu(
     // Render machine selection submenu
     if editor_state.show_machine_selection_menu {
         if let Some(base_position) = editor_state.background_context_menu_position {
-            let submenu_position = egui::Pos2::new(base_position.x + 210.0, base_position.y);
+            let submenu_position = egui::Pos2::new(base_position.x + 130.0, base_position.y);
             let submenu_id = egui::Id::new("machine_selection_submenu");
             
             // Track drawn rects
@@ -831,9 +822,6 @@ fn render_background_context_menu(
                 .show(ctx, |ui| {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.set_min_width(200.0);
-                        ui.heading("Select Machine");
-                        ui.separator();
-                        
                         let mut found_machines = false;
                         for (entity, name_opt) in q_sm.iter() {
                             // Skip machines that are already open
@@ -865,11 +853,7 @@ fn render_background_context_menu(
                         if !found_machines {
                             ui.label("No available machines");
                         }
-                        
-                        ui.separator();
-                        if ui.button("Cancel").clicked() {
-                            editor_state.show_machine_selection_menu = false;
-                        }
+
                         last_submenu_rect = Some(ui.min_rect());
                     });
                 });
