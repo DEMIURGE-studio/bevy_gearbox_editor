@@ -146,7 +146,23 @@ fn editor_ui_system(
                         commands.trigger(OpenMachineRequested { entity: new_entity, position: None });
                     }
                     ui.menu_button("Open", |ui| {
-                        let mut found_machines = false;
+                        // Ensure search field is focused once on open
+                        if editor_state.machine_search_should_focus {
+                            ui.memory_mut(|m| m.request_focus(egui::Id::new("open_menu_search")));
+                            editor_state.machine_search_should_focus = false;
+                        }
+                        // Search input
+                        let search_resp = ui.add_sized(
+                            [200.0, 24.0],
+                            egui::TextEdit::singleline(&mut editor_state.machine_search_text)
+                                .hint_text("Search...")
+                                .id_salt("open_menu_search"),
+                        );
+                        if search_resp.gained_focus() {
+                            // keep selected
+                        }
+
+                        let mut items: Vec<(Entity, String)> = Vec::new();
                         for (entity, name_opt) in q_sm.iter() {
                             // Skip already open machines
                             if editor_state.is_machine_open(entity) {
@@ -158,19 +174,54 @@ fn editor_ui_system(
                                     continue;
                                 }
                             }
-                            found_machines = true;
-                            let display_name = if let Some(name) = name_opt {
-                                name.as_str().to_string()
-                            } else {
-                                format!("Unnamed Machine")
-                            };
-                            if ui.button(&display_name).clicked() {
-                                commands.trigger(OpenMachineRequested { entity, position: None });
-                                ui.close();
-                            }
+                            let display_name = if let Some(name) = name_opt { name.as_str().to_string() } else { format!("Unnamed Machine") };
+                            items.push((entity, display_name));
                         }
-                        if !found_machines {
+                        // Filter by search
+                        if !editor_state.machine_search_text.is_empty() {
+                            let q = editor_state.machine_search_text.to_lowercase();
+                            items.retain(|(_, n)| n.to_lowercase().contains(&q));
+                        }
+                        // Sort for stable order
+                        items.sort_by(|a, b| a.1.cmp(&b.1));
+
+                        if items.is_empty() {
                             ui.label("No available machines");
+                        } else {
+                            let need_scroll = items.len() > 8;
+                            if need_scroll {
+                                egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                                    for (entity, display_name) in &items {
+                                        let mut job = egui::text::LayoutJob::default();
+                                        job.append(display_name, 0.0, egui::TextFormat::default());
+                                        job.append("  ", 0.0, egui::TextFormat::default());
+                                        job.append(&format!("{:?}", entity), 0.0, egui::TextFormat {
+                                            font_id: egui::FontId::monospace(12.0),
+                                            color: ui.visuals().weak_text_color(),
+                                            ..Default::default()
+                                        });
+                                        if ui.add(egui::Button::new(job)).clicked() {
+                                            commands.trigger(OpenMachineRequested { entity: *entity, position: None });
+                                            ui.close();
+                                        }
+                                    }
+                                });
+                            } else {
+                                for (entity, display_name) in &items {
+                                    let mut job = egui::text::LayoutJob::default();
+                                    job.append(display_name, 0.0, egui::TextFormat::default());
+                                    job.append("  ", 0.0, egui::TextFormat::default());
+                                    job.append(&format!("{:?}", entity), 0.0, egui::TextFormat {
+                                        font_id: egui::FontId::monospace(12.0),
+                                        color: ui.visuals().weak_text_color(),
+                                        ..Default::default()
+                                    });
+                                    if ui.add(egui::Button::new(job)).clicked() {
+                                        commands.trigger(OpenMachineRequested { entity: *entity, position: None });
+                                        ui.close();
+                                    }
+                                }
+                            }
                         }
                     });
                     let label = if editor_state.show_world_inspector { "Hide Inspector" } else { "Show Inspector" };
@@ -821,6 +872,8 @@ fn render_background_context_menu(
             .show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     if ui.button("Open State Machine").clicked() {
+                        editor_state.machine_search_text.clear();
+                        editor_state.machine_search_should_focus = true;
                         editor_state.show_machine_selection_menu = true;
                     }
                     
@@ -866,8 +919,20 @@ fn render_background_context_menu(
                 .order(egui::Order::Foreground)
                 .show(ctx, |ui| {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
-                        ui.set_min_width(200.0);
-                        let mut found_machines = false;
+                        ui.set_min_width(230.0);
+                        // Search input (focused on open)
+                        if editor_state.machine_search_should_focus {
+                            ui.memory_mut(|m| m.request_focus(egui::Id::new("submenu_open_menu_search")));
+                            editor_state.machine_search_should_focus = false;
+                        }
+                        ui.add_sized(
+                            [210.0, 24.0],
+                            egui::TextEdit::singleline(&mut editor_state.machine_search_text)
+                                .hint_text("Search...")
+                                .id_salt("submenu_open_menu_search"),
+                        );
+
+                        let mut items: Vec<(Entity, String)> = Vec::new();
                         for (entity, name_opt) in q_sm.iter() {
                             // Skip machines that are already open
                             if editor_state.is_machine_open(entity) {
@@ -880,24 +945,59 @@ fn render_background_context_menu(
                                     continue;
                                 }
                             }
-                            
-                            found_machines = true;
-                            let display_name = if let Some(name) = name_opt {
-                                name.as_str().to_string()
-                            } else {
-                                format!("Unnamed Machine")
-                            };
-                            
-                            if ui.button(&display_name).clicked() {
-                                let pos = editor_state.background_context_menu_position;
-                                commands.trigger(OpenMachineRequested { entity, position: pos });
-                                editor_state.background_context_menu_position = None;
-                                editor_state.show_machine_selection_menu = false;
-                            }
+                            let display_name = if let Some(name) = name_opt { name.as_str().to_string() } else { format!("Unnamed Machine") };
+                            items.push((entity, display_name));
                         }
-                        
-                        if !found_machines {
+
+                        // Filter by search
+                        if !editor_state.machine_search_text.is_empty() {
+                            let q = editor_state.machine_search_text.to_lowercase();
+                            items.retain(|(_, n)| n.to_lowercase().contains(&q));
+                        }
+                        // Sort
+                        items.sort_by(|a, b| a.1.cmp(&b.1));
+
+                        if items.is_empty() {
                             ui.label("No available machines");
+                        } else {
+                            let need_scroll = items.len() > 8;
+                            if need_scroll {
+                                egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                                    for (entity, display_name) in &items {
+                                        let mut job = egui::text::LayoutJob::default();
+                                        job.append(display_name, 0.0, egui::TextFormat::default());
+                                        job.append("  ", 0.0, egui::TextFormat::default());
+                                        job.append(&format!("{:?}", entity), 0.0, egui::TextFormat {
+                                            font_id: egui::FontId::monospace(12.0),
+                                            color: ui.visuals().weak_text_color(),
+                                            ..Default::default()
+                                        });
+                                        if ui.add(egui::Button::new(job)).clicked() {
+                                            let pos = editor_state.background_context_menu_position;
+                                            commands.trigger(OpenMachineRequested { entity: *entity, position: pos });
+                                            editor_state.background_context_menu_position = None;
+                                            editor_state.show_machine_selection_menu = false;
+                                        }
+                                    }
+                                });
+                            } else {
+                                for (entity, display_name) in &items {
+                                    let mut job = egui::text::LayoutJob::default();
+                                    job.append(display_name, 0.0, egui::TextFormat::default());
+                                    job.append("  ", 0.0, egui::TextFormat::default());
+                                    job.append(&format!("{:?}", entity), 0.0, egui::TextFormat {
+                                        font_id: egui::FontId::monospace(12.0),
+                                        color: ui.visuals().weak_text_color(),
+                                        ..Default::default()
+                                    });
+                                    if ui.add(egui::Button::new(job)).clicked() {
+                                        let pos = editor_state.background_context_menu_position;
+                                        commands.trigger(OpenMachineRequested { entity: *entity, position: pos });
+                                        editor_state.background_context_menu_position = None;
+                                        editor_state.show_machine_selection_menu = false;
+                                    }
+                                }
+                            }
                         }
 
                         last_submenu_rect = Some(ui.min_rect());

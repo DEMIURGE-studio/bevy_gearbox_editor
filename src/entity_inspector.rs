@@ -185,12 +185,16 @@ pub fn entity_inspector_system(world: &mut World) {
         let mut ctx = egui_context.clone();
         
         let mut keep_open = true;
-        egui::Window::new(format!("Inspector: {}", entity_name))
+        // Use a stable window id/title so the window retains its position across entity changes
+        egui::Window::new("Inspector")
+            .id(egui::Id::new("entity_inspector_window"))
             .default_width(300.0)
             .resizable(true)
             .vscroll(true)
             .open(&mut keep_open)
             .show(ctx.get_mut(), |ui| {
+                ui.label(format!("Inspector: {}", entity_name));
+                ui.separator();
                 if world.entities().contains(inspected_entity) {
                     render_inspector_tabs(world, inspected_entity, ui);
                 } else {

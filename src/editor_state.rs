@@ -229,6 +229,10 @@ pub struct EditorState {
     pub desired_open_positions: std::collections::HashMap<Entity, Pos2>,
     /// Whether the world inspector window should be visible
     pub show_world_inspector: bool,
+    /// Search text for the Open Machine menus
+    pub machine_search_text: String,
+    /// One-shot: focus the search field when opening the Open menu
+    pub machine_search_should_focus: bool,
 }
 
 /// Inspector tabs
