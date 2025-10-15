@@ -113,6 +113,7 @@
     ),
     4294967352: (
       components: {
+        "bevy_ecs::name::Name": "Always",
         "bevy_ecs::hierarchy::ChildOf": (64424509500),
         "bevy_gearbox::transitions::After": (
           duration: (
@@ -128,6 +129,7 @@
     ),
     4294967353: (
       components: {
+        "bevy_ecs::name::Name": "OnRepeat",
         "bevy_ecs::hierarchy::ChildOf": (64424509500),
         "bevy_gearbox::transitions::Source": (4294967350),
         "bevy_gearbox::transitions::Target": (4294967351),
@@ -137,6 +139,7 @@
     ),
     4294967354: (
       components: {
+        "bevy_ecs::name::Name": "CastAbility",
         "bevy_ecs::hierarchy::ChildOf": (4294967347),
         "bevy_gearbox::transitions::Source": (4294967349),
         "bevy_gearbox::transitions::Target": (4294967350),
@@ -146,6 +149,7 @@
     ),
     4294967355: (
       components: {
+        "bevy_ecs::name::Name": "OnComplete",
         "bevy_ecs::hierarchy::ChildOf": (4294967347),
         "bevy_gearbox::transitions::ResetEdge": (Source),
         "bevy_gearbox::transitions::Source": (4294967350),
