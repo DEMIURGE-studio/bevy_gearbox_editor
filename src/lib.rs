@@ -76,8 +76,8 @@ impl Plugin for GearboxEditorPlugin {
             ).chain())
             // Derive visual transitions from ECS edges each frame (preserving offsets)
             .add_systems(Update, sync_edge_visuals_from_ecs)
-            // NodeKind dogfood state machines (per selected machine)
-            .add_systems(Update, node_kind::sync_node_kind_machines)
+            // NodeKind dogfood state machines (event-driven creation/cleanup)
+            .add_observer(node_kind::on_open_machine_requested_sync_node_kind)
             // NodeKind event listeners
             .add_transition_event::<node_kind::AddChildClicked>()
             .add_transition_event::<node_kind::ChildAdded>()
@@ -89,7 +89,8 @@ impl Plugin for GearboxEditorPlugin {
             .add_observer(node_kind::on_enter_nodekind_state_parent)
             .add_observer(node_kind::on_enter_nodekind_state_parent_via_make_parent)
             .add_observer(node_kind::on_enter_nodekind_state_leaf)
-            .add_observer(node_kind::on_remove_state_children);
+            .add_observer(node_kind::on_remove_state_children)
+            .add_observer(node_kind::on_delete_node_cleanup_node_kind);
 
         // Handle requests to set InitialState centrally
         app.add_observer(handle_set_initial_state_request);

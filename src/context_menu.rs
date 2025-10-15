@@ -362,21 +362,10 @@ pub fn render_context_menu(
                             // Resolve using the stored edge_entity in the visual model
                             let event_type_clone = event_type.clone();
                             commands.queue(move |world: &mut World| {
-                                info!(
-                                    "Inspect requested (direct): source={:?} target={:?} event_type={}",
-                                    source, target, event_type_clone
-                                );
-                                let Some(editor_state) = world.get_resource::<EditorState>() else {
-                                    warn!("Inspect: EditorState missing");
-                                    return;
-                                };
-                                // Find which machine contains this entity (simplified approach)
-                                let root = if let Some(open_machine) = editor_state.open_machines.first() {
-                                    open_machine.entity
-                                } else {
-                                    warn!("Inspect: no open machines");
-                                    return;
-                                };
+                                // Find which machine contains this entity
+                                let mut q_state_child_of = world.query::<&bevy_gearbox::StateChildOf>();
+                                let q_child_of = q_state_child_of.query(world);
+                                let root = q_child_of.root_ancestor(edge_entity);
                                 let Some(_persistent) = world.get::<StateMachinePersistentData>(root) else {
                                     warn!("Inspect: missing StateMachinePersistentData on root {:?}", root);
                                     return;

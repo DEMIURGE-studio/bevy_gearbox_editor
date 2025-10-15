@@ -5,7 +5,8 @@ use bevy::prelude::*;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::transitions::{Source, Target, EventEdge};
 
-use crate::editor_state::{EditorState, StateMachinePersistentData};
+use crate::editor_state::StateMachinePersistentData;
+use crate::editor_state::{OpenMachineRequested, DeleteNode};
 use crate::components::{NodeType, LeafNode};
 use crate::editor_state::SetInitialStateRequested;
 
@@ -72,17 +73,13 @@ impl MakeParentClicked { pub fn new(entity: Entity) -> Self { Self { target: ent
 impl MakeLeafClicked { pub fn new(entity: Entity) -> Self { Self { target: entity } } }
 
 /// Ensure there is a NodeKind machine for every editor node under the selected machine
-pub fn sync_node_kind_machines(
-    editor_state: Res<EditorState>,
+/// Observer: when a machine is opened on the canvas, ensure NodeKind machines exist for its nodes
+pub fn on_open_machine_requested_sync_node_kind(
+    open_machine_requested: On<OpenMachineRequested>,
     mut commands: Commands,
     mut q_sm: Query<(&StateMachinePersistentData, &mut crate::editor_state::StateMachineTransientData), With<StateMachine>>,    
 ) {
-    // Find which machine to use (simplified approach)
-    let root = if let Some(open_machine) = editor_state.open_machines.first() {
-        open_machine.entity
-    } else {
-        return;
-    };
+    let root = open_machine_requested.entity;
     let Ok((persistent, mut transient)) = q_sm.get_mut(root) else { return; };
 
     for (&state_entity, _node) in persistent.nodes.iter() {
@@ -129,12 +126,43 @@ pub fn sync_node_kind_machines(
     }
 }
 
+/// Observer: clean up NodeKind machine when a node is deleted
+pub fn on_delete_node_cleanup_node_kind(
+    delete_node: On<DeleteNode>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
+    mut q: Query<&mut crate::editor_state::StateMachineTransientData, With<StateMachine>>,
+    mut commands: Commands,
+) {
+    let entity_to_delete = delete_node.entity;
+    let root = q_child_of.root_ancestor(entity_to_delete);
+    let Ok(mut transient) = q.get_mut(root) else { return; };
+    if let Some(nk_root) = transient.node_kind_roots.remove(&entity_to_delete) {
+        // Despawn NK machine root and its direct state children
+        commands.queue(move |world: &mut World| {
+            // Collect direct children of nk_root
+            let mut to_despawn: Vec<Entity> = Vec::new();
+            {
+                let mut q_children = world.query::<(Entity, &bevy_gearbox::StateChildOf)>();
+                for (e, rel) in q_children.iter(world) {
+                    if rel.0 == nk_root { to_despawn.push(e); }
+                }
+            }
+            // Despawn children first
+            for e in to_despawn { world.entity_mut(e).despawn(); }
+            // Despawn root
+            if world.entities().contains(nk_root) {
+                world.entity_mut(nk_root).despawn();
+            }
+        });
+    }
+}
+
 /// On entering Parallel state: ensure editor state has Parallel marker and no InitialState
 pub fn on_enter_nodekind_state_parallel(
     enter_state: On<EnterState>,
     q_nk_for: Query<&NodeKindFor, With<NodeKindParallel>>,
     mut commands: Commands,
-    editor_state: Res<EditorState>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
 ) {
     let nk_state = enter_state.target;
     let Ok(NodeKindFor(target_state_entity)) = q_nk_for.get(nk_state) else { return; };
@@ -143,12 +171,8 @@ pub fn on_enter_nodekind_state_parallel(
     commands.entity(state).remove::<bevy_gearbox::InitialState>();
 
     // Ensure at least one child exists; if none, create one and add a visual node
-    // Find which machine to use (simplified approach)
-    let root = if let Some(open_machine) = editor_state.open_machines.first() {
-        open_machine.entity
-    } else {
-        return;
-    };
+    // Resolve the owning machine for this state via relationships
+    let root = q_child_of.root_ancestor(state);
     commands.queue(move |world: &mut World| {
         let has_child = world
             .get::<bevy_gearbox::StateChildren>(state)
@@ -175,19 +199,15 @@ pub fn on_enter_nodekind_state_parent(
     enter_state: On<EnterState>,
     q_nk_for: Query<&NodeKindFor, With<NodeKindParent>>,
     mut commands: Commands,
-    editor_state: Res<EditorState>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
 ) {
     let nk_state = enter_state.target;
     let Ok(NodeKindFor(target_state_entity)) = q_nk_for.get(nk_state) else { return; };
     let state = *target_state_entity;
     commands.entity(state).remove::<bevy_gearbox::Parallel>();
 
-    // Find which machine to use (simplified approach)
-    let root = if let Some(open_machine) = editor_state.open_machines.first() {
-        open_machine.entity
-    } else {
-        return;
-    };
+    // Resolve the owning machine for this state via relationships
+    let root = q_child_of.root_ancestor(state);
     commands.queue(move |world: &mut World| {
         // Ensure at least one child
         let first_child: Option<Entity> = world
@@ -230,17 +250,13 @@ pub fn on_enter_nodekind_state_parent_via_make_parent(
     enter_state: On<EnterState>,
     q_nk_for: Query<&NodeKindFor, With<NodeKindParent>>,
     mut commands: Commands,
-    editor_state: Res<EditorState>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
 ) {
     let nk_state = enter_state.target;
     let Ok(NodeKindFor(target_state_entity)) = q_nk_for.get(nk_state) else { return; };
     let state = *target_state_entity;
-    // Find which machine to use (simplified approach)
-    let root = if let Some(open_machine) = editor_state.open_machines.first() {
-        open_machine.entity
-    } else {
-        return;
-    };
+    // Resolve the owning machine for this state via relationships
+    let root = q_child_of.root_ancestor(state);
     commands.queue(move |world: &mut World| {
         let mut first_child: Option<Entity> = world
             .get::<bevy_gearbox::StateChildren>(state)
@@ -265,17 +281,13 @@ pub fn on_enter_nodekind_state_parent_via_make_parent(
 /// When a state loses its StateChildren component (no more children), demote to Leaf
 pub fn on_remove_state_children(
     remove: On<Remove, bevy_gearbox::StateChildren>,
-    editor_state: Res<EditorState>,
+    q_child_of: Query<&bevy_gearbox::StateChildOf>,
     mut q: Query<&mut crate::editor_state::StateMachineTransientData, With<StateMachine>>,
     mut commands: Commands,
 ) {
     let parent = remove.entity;
-    // Find which machine to use (simplified approach)
-    let root = if let Some(open_machine) = editor_state.open_machines.first() {
-        open_machine.entity
-    } else {
-        return;
-    };
+    // Resolve the owning machine for this state via relationships
+    let root = q_child_of.root_ancestor(parent);
     let Ok(transient) = q.get_mut(root) else { return; };
     let Some(&nk_root) = transient.node_kind_roots.get(&parent) else { return; };
     commands.trigger(AllChildrenRemoved::new(nk_root));
