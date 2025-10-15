@@ -227,6 +227,8 @@ pub struct EditorState {
     pub canvas_origin: Option<Pos2>,
     /// Desired top-left positions for newly opened machines (applied on scaffold ready)
     pub desired_open_positions: std::collections::HashMap<Entity, Pos2>,
+    /// Whether the world inspector window should be visible
+    pub show_world_inspector: bool,
 }
 
 /// Inspector tabs

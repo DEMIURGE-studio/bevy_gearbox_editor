@@ -173,6 +173,10 @@ fn editor_ui_system(
                             ui.label("No available machines");
                         }
                     });
+                    let label = if editor_state.show_world_inspector { "Hide Inspector" } else { "Show Inspector" };
+                    if ui.button(label).clicked() {
+                        editor_state.show_world_inspector = !editor_state.show_world_inspector;
+                    }
                 });
             });
         });
@@ -251,11 +255,14 @@ fn embedded_world_inspector_exclusive(world: &mut World) {
         query.iter_mut(world).next().map(|mut egui_context| egui_context.get_mut().clone())
     };
     if let Some(ctx) = ctx_opt {
-        egui::Window::new("World Inspector").default_open(true).show(&ctx, |ui| {
+        let show = world.resource::<EditorState>().show_world_inspector;
+        if show {
+            egui::Window::new("World Inspector").default_open(true).show(&ctx, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 ui_for_world(world, ui);
             });
-        });
+            });
+        }
     }
 }
 
