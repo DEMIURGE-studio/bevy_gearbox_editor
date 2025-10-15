@@ -142,7 +142,8 @@ fn editor_ui_system(
                             StateMachine::new(),
                             Name::new("New Machine"),
                         )).id();
-                        commands.trigger(OpenMachineRequested { entity: new_entity });
+                        // Place near top-left of canvas as default for banner action
+                        commands.trigger(OpenMachineRequested { entity: new_entity, position: None });
                     }
                     ui.menu_button("Open", |ui| {
                         let mut found_machines = false;
@@ -164,7 +165,7 @@ fn editor_ui_system(
                                 format!("Unnamed Machine")
                             };
                             if ui.button(&display_name).clicked() {
-                                commands.trigger(OpenMachineRequested { entity });
+                                commands.trigger(OpenMachineRequested { entity, position: None });
                                 ui.close();
                             }
                         }
@@ -177,6 +178,8 @@ fn editor_ui_system(
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            // Track canvas origin in screen coordinates for later conversions
+            editor_state.canvas_origin = Some(ui.min_rect().min);
             // Render each open machine directly on the canvas
             for open_machine in &editor_state.open_machines.clone() {
                 if let Ok((sm_entity, _, persistent_data_opt, transient_data_opt)) = q_sm_data.get_mut(open_machine.entity) {
@@ -829,8 +832,9 @@ fn render_background_context_menu(
                             StateMachine::new(),
                             Name::new("New Machine"),
                         )).id();
-                        
-                        commands.trigger(OpenMachineRequested { entity: new_entity });
+                        // Use background menu position to place at mouse; fallback to center
+                        let pos = editor_state.background_context_menu_position;
+                        commands.trigger(OpenMachineRequested { entity: new_entity, position: pos });
                         editor_state.background_context_menu_position = None;
                     }
                     // Capture rect
@@ -887,7 +891,8 @@ fn render_background_context_menu(
                             };
                             
                             if ui.button(&display_name).clicked() {
-                                commands.trigger(OpenMachineRequested { entity });
+                                let pos = editor_state.background_context_menu_position;
+                                commands.trigger(OpenMachineRequested { entity, position: pos });
                                 editor_state.background_context_menu_position = None;
                                 editor_state.show_machine_selection_menu = false;
                             }
@@ -952,7 +957,11 @@ fn handle_open_machine_request(
         format!("Machine {:?}", open_machine_requested.entity)
     };
     
-    editor_state.add_machine(open_machine_requested.entity, display_name);
+    // Determine desired screen position; default to (100, 100) from top-left of the screen
+    let desired_screen_pos = open_machine_requested.position.unwrap_or(egui::Pos2::new(100.0, 100.0));
+    editor_state.desired_open_positions.insert(open_machine_requested.entity, desired_screen_pos);
+    // Avoid adding an additional canvas offset so positioning is exact
+    editor_state.add_machine_with_offset(open_machine_requested.entity, display_name, egui::Vec2::ZERO);
     info!("✅ Opened machine {:?} on canvas", open_machine_requested.entity);
 
     // Ensure scaffold and emit MachineScaffoldReady(root)
@@ -981,6 +990,7 @@ fn handle_machine_scaffold_ready(
     ready: On<MachineScaffoldReady>,
     q_children: Query<&bevy_gearbox::StateChildren>,
     mut q_sm: Query<&mut StateMachinePersistentData, With<StateMachine>>,
+    mut editor_state: ResMut<EditorState>,
     mut commands: Commands,
 ) {
     let root = ready.root;
@@ -996,6 +1006,27 @@ fn handle_machine_scaffold_ready(
     }
     let after = persistent.nodes.len();
     if after != before { info!("Cascade: populated nodes {} -> {} for root {:?}", before, after, root); }
+    // If a desired open position was specified, apply it by shifting all nodes so the root's top-left aligns
+    if let Some(screen_pos) = editor_state.desired_open_positions.remove(&root) {
+        if let Some(canvas_origin) = editor_state.canvas_origin {
+            // Convert screen pos to canvas-local position
+            let target_top_left = egui::Pos2::new(screen_pos.x - canvas_origin.x, screen_pos.y - canvas_origin.y);
+            if let Some(root_node) = persistent.nodes.get(&root) {
+                let current_rect = root_node.current_rect();
+                let delta = egui::Vec2::new(target_top_left.x - current_rect.min.x, target_top_left.y - current_rect.min.y);
+                for node in persistent.nodes.values_mut() {
+                    match node {
+                        crate::components::NodeType::Leaf(leaf) => { leaf.entity_node.position += delta; }
+                        crate::components::NodeType::Parent(parent) => { parent.entity_node.position += delta; }
+                    }
+                }
+                // Also shift visual transition event nodes
+                for vt in persistent.visual_transitions.iter_mut() {
+                    vt.event_node_position += delta;
+                }
+            }
+        }
+    }
     // Continue cascade
     commands.trigger(MachineNodesPopulated { root });
 }

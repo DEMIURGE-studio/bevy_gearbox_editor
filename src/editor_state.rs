@@ -223,6 +223,10 @@ pub struct EditorState {
     /// Tracks relationships between origin entities and their related entities
     /// Key: origin entity, Value: list of related entities
     pub related_entities: std::collections::HashMap<Entity, Vec<Entity>>,
+    /// Canvas (CentralPanel) top-left origin in screen coordinates for coordinate conversion
+    pub canvas_origin: Option<Pos2>,
+    /// Desired top-left positions for newly opened machines (applied on scaffold ready)
+    pub desired_open_positions: std::collections::HashMap<Entity, Pos2>,
 }
 
 /// Inspector tabs
@@ -458,6 +462,7 @@ pub struct BackgroundContextMenuRequested {
 #[derive(Event)]
 pub struct OpenMachineRequested {
     pub entity: Entity,
+    pub position: Option<Pos2>,
 }
 
 /// Event fired when a machine should be closed from the canvas
