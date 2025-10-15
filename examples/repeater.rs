@@ -26,6 +26,9 @@ fn main() {
         .register_type_data::<u64, InspectorEguiImpl>()
         .register_type_data::<std::borrow::Cow<str>, InspectorEguiImpl>()
         .register_type_data::<Entity, InspectorEguiImpl>()
+        .register_type_data::<std::time::Duration, InspectorEguiImpl>()
+        .register_type_data::<f32, InspectorEguiImpl>()
+        .register_type_data::<f64, InspectorEguiImpl>()
         .register_type::<AbilityMachine>()
         .register_type::<Repeater>()
         // ResetEdge/ResetScope are provided by core

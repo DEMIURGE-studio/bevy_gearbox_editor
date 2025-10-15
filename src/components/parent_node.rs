@@ -158,7 +158,7 @@ impl ParentNode {
         node_response.hovered = response.hovered();
         
         // Draw the parent node (with editing support)
-        self.draw_parent_node_with_editing(ui, rect, title_rect, name, entity_id, is_editing, editing_text, should_focus, first_focus, custom_color, dotted_border);
+        self.draw_parent_node_with_editing(ui, rect, title_rect, name, entity_id, is_selected, is_editing, editing_text, should_focus, first_focus, custom_color, dotted_border);
         
         // Add the + button for transitions (show for selected nodes, including root for global transitions)
         if is_selected {
@@ -214,6 +214,7 @@ impl ParentNode {
         title_rect: Rect,
         name: &str,
         entity_id: Option<&str>,
+        is_selected: bool,
         is_editing: bool,
         editing_text: &mut String,
         should_focus: bool,
@@ -222,9 +223,9 @@ impl ParentNode {
         dotted_border: bool,
     ) {
         if is_editing {
-            self.draw_parent_node_editing(ui, rect, title_rect, entity_id, editing_text, should_focus, first_focus);
+            self.draw_parent_node_editing(ui, rect, title_rect, entity_id, is_selected, editing_text, should_focus, first_focus);
         } else {
-            self.draw_parent_node_normal(ui, rect, title_rect, name, entity_id, custom_color, dotted_border);
+            self.draw_parent_node_normal(ui, rect, title_rect, name, entity_id, is_selected, custom_color, dotted_border);
         }
     }
 
@@ -236,6 +237,7 @@ impl ParentNode {
         title_rect: Rect,
         name: &str,
         entity_id: Option<&str>,
+        is_selected: bool,
         custom_color: Option<egui::Color32>,
         dotted_border: bool,
     ) {
@@ -251,12 +253,14 @@ impl ParentNode {
         );
         
         // Draw container border (dotted optional)
+        let selected_border = Color32::from_rgb(100, 150, 255);
+        let border_color = if is_selected { selected_border } else { self.entity_node.border_color };
         if dotted_border {
             super::draw_dotted_rect(
                 painter,
                 rect,
                 egui::CornerRadius::same(8),
-                egui::Stroke::new(1.5, self.entity_node.border_color),
+                egui::Stroke::new(1.5, border_color),
                 2.0,
                 3.0,
             );
@@ -264,7 +268,7 @@ impl ParentNode {
             painter.rect_stroke(
                 rect,
                 egui::CornerRadius::same(8),
-                egui::Stroke::new(1.5, self.entity_node.border_color),
+                egui::Stroke::new(1.5, border_color),
                 egui::StrokeKind::Outside,
             );
         }
@@ -355,6 +359,7 @@ impl ParentNode {
         rect: Rect,
         title_rect: Rect,
         entity_id: Option<&str>,
+        is_selected: bool,
         editing_text: &mut String,
         should_focus: bool,
         first_focus: bool,
@@ -362,7 +367,7 @@ impl ParentNode {
         // First scope: Draw backgrounds and borders
         {
             let painter = ui.painter();
-            let bg_color = egui::Color32::from_rgb(70, 70, 90); // Slightly brighter for editing
+            let bg_color = self.entity_node.current_bg_color();
             
             // Draw main container background
             painter.rect_filled(
@@ -371,11 +376,13 @@ impl ParentNode {
                 bg_color,
             );
             
-            // Draw container border with editing color
+            // Draw container border with selection highlight if selected
+            let selected_border = Color32::from_rgb(100, 150, 255);
+            let border_color = if is_selected { selected_border } else { self.entity_node.border_color };
             painter.rect_stroke(
                 rect,
                 egui::CornerRadius::same(8),
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 150, 255)), // Blue border for editing
+                egui::Stroke::new(1.5, border_color),
                 egui::StrokeKind::Outside,
             );
             
@@ -405,7 +412,7 @@ impl ParentNode {
                     egui::Pos2::new(rect.min.x + 5.0, separator_y),
                     egui::Pos2::new(rect.max.x - 5.0, separator_y),
                 ],
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 150, 255)),
+                egui::Stroke::new(1.0, self.entity_node.border_color),
             );
         }
         

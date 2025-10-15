@@ -90,6 +90,7 @@ pub fn show_single_machine_on_canvas(
     persistent_data: &mut StateMachinePersistentData,
     transient_data: &mut StateMachineTransientData,
     selected_root: Entity,
+    selected_entity: Option<Entity>,
     all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
     q_child_of: &Query<&bevy_gearbox::StateChildOf>,
     q_children: &Query<&bevy_gearbox::StateChildren>,
@@ -103,6 +104,7 @@ pub fn show_single_machine_on_canvas(
         persistent_data,
         transient_data,
         selected_root,
+        selected_entity,
         all_entities,
         q_child_of,
         q_children,
@@ -118,6 +120,7 @@ fn render_machine_content(
     persistent_data: &mut StateMachinePersistentData,
     transient_data: &mut StateMachineTransientData,
     selected_root: Entity,
+    selected_entity: Option<Entity>,
     all_entities: &Query<(Entity, Option<&Name>, Option<&InitialState>)>,
     q_child_of: &Query<&bevy_gearbox::StateChildOf>,
     q_children: &Query<&bevy_gearbox::StateChildren>,
@@ -159,7 +162,7 @@ fn render_machine_content(
         let entity_name = get_entity_name(entity, all_entities);
         
         if let Some(node) = persistent_data.nodes.get_mut(&entity) {
-            let is_selected = transient_data.selected_node == Some(entity);
+            let is_selected = selected_entity == Some(entity);
             let is_root = selected_root == entity;
             let is_editing = transient_data.text_editing.is_editing(entity);
             let should_focus = transient_data.text_editing.should_focus;
@@ -213,19 +216,19 @@ fn render_machine_content(
                 transient_data.text_editing.first_focus = false;
             }
             
-            // Handle selection
+            // Handle selection via event
             if response.clicked {
-                // Check if we're in transition creation mode and waiting for target selection
+                // If we're currently picking a transition target, treat this click as selecting the target
                 if transient_data.transition_creation.awaiting_target_selection {
                     let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
                     transient_data.transition_creation.set_target(entity, pointer_pos);
-                } else {
-                    transient_data.selected_node = Some(entity);
                 }
+                commands.trigger(crate::Select { selected: Some(entity) });
             }
             
             // Handle + button click for transition creation (leaf nodes only)
             if response.add_transition_clicked {
+                commands.trigger(crate::Select { selected: Some(entity) });
                 commands.trigger(TransitionCreationRequested {
                     source_entity: entity,
                 });
@@ -234,6 +237,7 @@ fn render_machine_content(
             // Handle right-click context menu
             if response.right_clicked {
                 let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
+                commands.trigger(crate::Select { selected: Some(entity) });
                 commands.trigger(NodeContextMenuRequested {
                     entity,
                     position: pointer_pos,
@@ -529,22 +533,13 @@ fn handle_text_editing_completion(
     commands: &mut Commands,
 ) {
     if transient_data.text_editing.editing_entity.is_some() {
-        let should_complete = ui.input(|i| {
-            // Complete on Enter key
-            i.key_pressed(egui::Key::Enter) ||
-            // Complete on Escape key (cancel)
-            i.key_pressed(egui::Key::Escape) ||
-            // Complete when clicking outside
-            i.pointer.any_click()
-        });
-        
-        let is_escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
-        
-        if should_complete {
-            if is_escape {
+        let pressed_enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let pressed_escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+        if pressed_enter || pressed_escape {
+            if pressed_escape {
                 transient_data.text_editing.cancel_editing();
             } else if let Some((entity, new_name)) = transient_data.text_editing.stop_editing() {
-                // Update the entity's name if it's not empty
                 let trimmed_name = new_name.trim();
                 if !trimmed_name.is_empty() {
                     commands.entity(entity).insert(Name::new(trimmed_name.to_string()));

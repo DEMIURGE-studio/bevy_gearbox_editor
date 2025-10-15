@@ -200,6 +200,8 @@ pub struct OpenMachine {
 pub struct EditorState {
     /// Multiple open machines on the canvas
     pub open_machines: Vec<OpenMachine>,
+    /// Currently selected entity in the editor (None clears selection)
+    pub selected_entity: Option<Entity>,
     /// Entity for which a context menu is requested
     pub context_menu_entity: Option<Entity>,
     /// Position where the context menu should appear
@@ -229,6 +231,12 @@ pub struct EditorState {
     pub desired_open_positions: std::collections::HashMap<Entity, Pos2>,
     /// Whether the world inspector window should be visible
     pub show_world_inspector: bool,
+    /// Whether the top Open menu is visible
+    pub show_open_menu: bool,
+    /// Screen position for the top Open menu popup
+    pub open_menu_position: Option<Pos2>,
+    /// One-shot: suppress outside-click close for the Open menu this frame
+    pub suppress_open_menu_outside_close_once: bool,
     /// Search text for the Open Machine menus
     pub machine_search_text: String,
     /// One-shot: focus the search field when opening the Open menu
@@ -467,6 +475,12 @@ pub struct BackgroundContextMenuRequested {
 pub struct OpenMachineRequested {
     pub entity: Entity,
     pub position: Option<Pos2>,
+}
+
+/// Event: change selection in the editor (None to clear)
+#[derive(Event, Clone, Copy, Debug)]
+pub struct Select {
+    pub selected: Option<Entity>,
 }
 
 /// Event fired when a machine should be closed from the canvas

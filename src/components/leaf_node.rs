@@ -130,6 +130,7 @@ impl LeafNode {
             &main_text_galley, 
             subscript_galley.as_ref().map(|v| &**v), 
             text_gap,
+            is_selected,
             is_editing,
             editing_text,
             should_focus,
@@ -192,6 +193,7 @@ impl LeafNode {
         main_text_galley: &egui::Galley,
         subscript_galley: Option<&egui::Galley>,
         text_gap: f32,
+        is_selected: bool,
         is_editing: bool,
         editing_text: &mut String,
         should_focus: bool,
@@ -200,9 +202,9 @@ impl LeafNode {
         dotted_border: bool,
     ) {
         if is_editing {
-            self.draw_node_editing(ui, rect, subscript_galley, text_gap, editing_text, should_focus, first_focus);
+            self.draw_node_editing(ui, rect, subscript_galley, text_gap, is_selected, editing_text, should_focus, first_focus, custom_color, dotted_border);
         } else {
-            self.draw_node_normal(ui, rect, main_text_galley, subscript_galley, text_gap, custom_color, dotted_border);
+            self.draw_node_normal(ui, rect, main_text_galley, subscript_galley, text_gap, is_selected, custom_color, dotted_border);
         }
     }
 
@@ -214,6 +216,7 @@ impl LeafNode {
         main_text_galley: &egui::Galley,
         subscript_galley: Option<&egui::Galley>,
         text_gap: f32,
+        is_selected: bool,
         custom_color: Option<egui::Color32>,
         dotted_border: bool,
     ) {
@@ -228,12 +231,14 @@ impl LeafNode {
         );
         
         // Draw border (dotted optional)
+        let selected_border = egui::Color32::from_rgb(100, 150, 255);
+        let border_color = if is_selected { selected_border } else { self.entity_node.border_color };
         if dotted_border {
             super::draw_dotted_rect(
                 painter,
                 rect,
                 egui::CornerRadius::same(10),
-                egui::Stroke::new(1.5, self.entity_node.border_color),
+                egui::Stroke::new(1.5, border_color),
                 2.0,
                 3.0,
             );
@@ -241,7 +246,7 @@ impl LeafNode {
             painter.rect_stroke(
                 rect,
                 egui::CornerRadius::same(10),
-                egui::Stroke::new(1.5, self.entity_node.border_color),
+                egui::Stroke::new(1.5, border_color),
                 egui::StrokeKind::Outside,
             );
         }
@@ -278,9 +283,12 @@ impl LeafNode {
         rect: Rect,
         subscript_galley: Option<&egui::Galley>,
         text_gap: f32,
+        is_selected: bool,
         editing_text: &mut String,
         should_focus: bool,
         first_focus: bool,
+        custom_color: Option<egui::Color32>,
+        dotted_border: bool,
     ) {
         // Calculate text input area (main text area only)
         let subscript_size = subscript_galley.map(|g| g.size()).unwrap_or(egui::Vec2::ZERO);
@@ -292,24 +300,32 @@ impl LeafNode {
             egui::Vec2::new(rect.width() - self.entity_node.padding.x * 2.0, text_input_height),
         );
         
-        // First scope: Draw background and border using painter
+        // First scope: Draw background and border using painter (same as normal, no editing-specific outline)
         {
             let painter = ui.painter();
-            
-            // Draw background with editing highlight
-            painter.rect_filled(
-                rect,
-                egui::CornerRadius::same(10),
-                egui::Color32::from_rgb(70, 70, 90), // Slightly brighter for editing
-            );
-            
-            // Draw border with editing color
-            painter.rect_stroke(
-                rect,
-                egui::CornerRadius::same(10),
-                egui::Stroke::new(2.0, egui::Color32::from_rgb(100, 150, 255)), // Blue border for editing
-                egui::StrokeKind::Outside,
-            );
+            // Background same as normal
+            let bg_color = custom_color.unwrap_or_else(|| self.entity_node.current_bg_color());
+            painter.rect_filled(rect, egui::CornerRadius::same(10), bg_color);
+            // Border based on selection
+            let selected_border = egui::Color32::from_rgb(100, 150, 255);
+            let border_color = if is_selected { selected_border } else { self.entity_node.border_color };
+            if dotted_border {
+                super::draw_dotted_rect(
+                    painter,
+                    rect,
+                    egui::CornerRadius::same(10),
+                    egui::Stroke::new(1.5, border_color),
+                    2.0,
+                    3.0,
+                );
+            } else {
+                painter.rect_stroke(
+                    rect,
+                    egui::CornerRadius::same(10),
+                    egui::Stroke::new(1.5, border_color),
+                    egui::StrokeKind::Outside,
+                );
+            }
         }
         
         // Second scope: Handle text input (mutable borrow of ui)

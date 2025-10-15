@@ -108,6 +108,7 @@ impl Plugin for GearboxEditorPlugin {
             .add_observer(handle_delete_node)
             .add_observer(handle_background_context_menu_request)
             .add_observer(handle_open_machine_request)
+            .add_observer(handle_select_event)
             .add_observer(handle_close_machine_request)
             .add_observer(handle_view_related)
             .add_observer(node_kind::on_machine_nodes_populated_sync_node_kind)
@@ -145,85 +146,16 @@ fn editor_ui_system(
                         // Place near top-left of canvas as default for banner action
                         commands.trigger(OpenMachineRequested { entity: new_entity, position: None });
                     }
-                    ui.menu_button("Open", |ui| {
-                        // Ensure search field is focused once on open
-                        if editor_state.machine_search_should_focus {
-                            ui.memory_mut(|m| m.request_focus(egui::Id::new("open_menu_search")));
-                            editor_state.machine_search_should_focus = false;
-                        }
-                        // Search input
-                        let search_resp = ui.add_sized(
-                            [200.0, 24.0],
-                            egui::TextEdit::singleline(&mut editor_state.machine_search_text)
-                                .hint_text("Search...")
-                                .id_salt("open_menu_search"),
-                        );
-                        if search_resp.gained_focus() {
-                            // keep selected
-                        }
-
-                        let mut items: Vec<(Entity, String)> = Vec::new();
-                        for (entity, name_opt) in q_sm.iter() {
-                            // Skip already open machines
-                            if editor_state.is_machine_open(entity) {
-                                continue;
-                            }
-                            // Skip internal NodeKind machines
-                            if let Some(name) = name_opt {
-                                if name.as_str() == "NodeKind" {
-                                    continue;
-                                }
-                            }
-                            let display_name = if let Some(name) = name_opt { name.as_str().to_string() } else { format!("Unnamed Machine") };
-                            items.push((entity, display_name));
-                        }
-                        // Filter by search
-                        if !editor_state.machine_search_text.is_empty() {
-                            let q = editor_state.machine_search_text.to_lowercase();
-                            items.retain(|(_, n)| n.to_lowercase().contains(&q));
-                        }
-                        // Sort for stable order
-                        items.sort_by(|a, b| a.1.cmp(&b.1));
-
-                        if items.is_empty() {
-                            ui.label("No available machines");
-                        } else {
-                            let need_scroll = items.len() > 8;
-                            if need_scroll {
-                                egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                                    for (entity, display_name) in &items {
-                                        let mut job = egui::text::LayoutJob::default();
-                                        job.append(display_name, 0.0, egui::TextFormat::default());
-                                        job.append("  ", 0.0, egui::TextFormat::default());
-                                        job.append(&format!("{:?}", entity), 0.0, egui::TextFormat {
-                                            font_id: egui::FontId::monospace(12.0),
-                                            color: ui.visuals().weak_text_color(),
-                                            ..Default::default()
-                                        });
-                                        if ui.add(egui::Button::new(job)).clicked() {
-                                            commands.trigger(OpenMachineRequested { entity: *entity, position: None });
-                                            ui.close();
-                                        }
-                                    }
-                                });
-                            } else {
-                                for (entity, display_name) in &items {
-                                    let mut job = egui::text::LayoutJob::default();
-                                    job.append(display_name, 0.0, egui::TextFormat::default());
-                                    job.append("  ", 0.0, egui::TextFormat::default());
-                                    job.append(&format!("{:?}", entity), 0.0, egui::TextFormat {
-                                        font_id: egui::FontId::monospace(12.0),
-                                        color: ui.visuals().weak_text_color(),
-                                        ..Default::default()
-                                    });
-                                    if ui.add(egui::Button::new(job)).clicked() {
-                                        commands.trigger(OpenMachineRequested { entity: *entity, position: None });
-                                        ui.close();
-                                    }
-                                }
-                            }
-                        }
-                    });
+                    // Open menu toggle button
+                    let open_btn_resp = ui.button("Open");
+                    if open_btn_resp.clicked() {
+                        let pos = open_btn_resp.rect.left_bottom() + egui::vec2(0.0, 4.0);
+                        editor_state.open_menu_position = Some(pos);
+                        editor_state.suppress_open_menu_outside_close_once = true;
+                        editor_state.show_open_menu = true;
+                        editor_state.machine_search_text.clear();
+                        editor_state.machine_search_should_focus = true;
+                    }
                     let label = if editor_state.show_world_inspector { "Hide Inspector" } else { "Show Inspector" };
                     if ui.button(label).clicked() {
                         editor_state.show_world_inspector = !editor_state.show_world_inspector;
@@ -261,6 +193,7 @@ fn editor_ui_system(
                         &mut persistent_data,
                         &mut transient_data,
                         sm_entity,
+                        editor_state.selected_entity,
                         &q_entities,
                         &q_child_of,
                         &q_children,
@@ -294,7 +227,118 @@ fn editor_ui_system(
                 &q_sm,
                 &mut commands,
             );
+
+            // Render persistent Open menu (top)
+            render_open_menu(
+                ctx,
+                &mut editor_state,
+                &q_sm,
+                &mut commands,
+            );
         });
+    }
+}
+
+/// Render the persistent Open menu anchored near the top toolbar
+fn render_open_menu(
+    ctx: &egui::Context,
+    editor_state: &mut EditorState,
+    q_sm: &Query<(Entity, Option<&Name>), With<StateMachine>>,
+    commands: &mut Commands,
+) {
+    if !editor_state.show_open_menu {
+        return;
+    }
+    let pos = editor_state.open_menu_position.unwrap_or(egui::Pos2::new(100.0, 40.0));
+    let id = egui::Id::new("top_open_menu_popup");
+    let mut last_rect: Option<egui::Rect> = None;
+    egui::Area::new(id)
+        .fixed_pos(pos)
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_min_width(260.0);
+                if editor_state.machine_search_should_focus {
+                    ui.memory_mut(|m| m.request_focus(egui::Id::new("open_menu_search")));
+                    editor_state.machine_search_should_focus = false;
+                }
+                ui.add_sized(
+                    [240.0, 24.0],
+                    egui::TextEdit::singleline(&mut editor_state.machine_search_text)
+                        .hint_text("Search...")
+                        .id_salt("open_menu_search"),
+                );
+
+                let mut items: Vec<(Entity, String)> = Vec::new();
+                for (entity, name_opt) in q_sm.iter() {
+                    if editor_state.is_machine_open(entity) { continue; }
+                    if let Some(name) = name_opt {
+                        if name.as_str() == "NodeKind" { continue; }
+                    }
+                    let display_name = if let Some(name) = name_opt { name.as_str().to_string() } else { format!("Unnamed Machine") };
+                    items.push((entity, display_name));
+                }
+                if !editor_state.machine_search_text.is_empty() {
+                    let q = editor_state.machine_search_text.to_lowercase();
+                    items.retain(|(_, n)| n.to_lowercase().contains(&q));
+                }
+                items.sort_by(|a, b| a.1.cmp(&b.1));
+
+                if items.is_empty() {
+                    ui.label("No available machines");
+                } else {
+                    let need_scroll = items.len() > 8;
+                    if need_scroll {
+                        egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                            for (entity, display_name) in &items {
+                                let mut job = egui::text::LayoutJob::default();
+                                job.append(display_name, 0.0, egui::TextFormat::default());
+                                job.append("  ", 0.0, egui::TextFormat::default());
+                                job.append(&format!("{:?}", entity), 0.0, egui::TextFormat {
+                                    font_id: egui::FontId::monospace(12.0),
+                                    color: ui.visuals().weak_text_color(),
+                                    ..Default::default()
+                                });
+                                if ui.add(egui::Button::new(job)).clicked() {
+                                    commands.trigger(OpenMachineRequested { entity: *entity, position: None });
+                                    editor_state.show_open_menu = false;
+                                }
+                            }
+                        });
+                    } else {
+                        for (entity, display_name) in &items {
+                            let mut job = egui::text::LayoutJob::default();
+                            job.append(display_name, 0.0, egui::TextFormat::default());
+                            job.append("  ", 0.0, egui::TextFormat::default());
+                            job.append(&format!("{:?}", entity), 0.0, egui::TextFormat {
+                                font_id: egui::FontId::monospace(12.0),
+                                color: ui.visuals().weak_text_color(),
+                                ..Default::default()
+                            });
+                            if ui.add(egui::Button::new(job)).clicked() {
+                                commands.trigger(OpenMachineRequested { entity: *entity, position: None });
+                                editor_state.show_open_menu = false;
+                            }
+                        }
+                    }
+                }
+                last_rect = Some(ui.min_rect());
+            });
+        });
+
+    // Close if clicking outside
+    if let Some(rect) = last_rect {
+        if ctx.input(|i| i.pointer.any_click()) {
+            // Skip once right after opening
+            if editor_state.suppress_open_menu_outside_close_once {
+                editor_state.suppress_open_menu_outside_close_once = false;
+                return;
+            }
+            let pointer_pos = ctx.input(|i| i.pointer.hover_pos().unwrap_or_default());
+            if !rect.contains(pointer_pos) {
+                editor_state.show_open_menu = false;
+            }
+        }
     }
 }
 
@@ -1190,4 +1234,25 @@ fn handle_view_related(
     
     info!("🔗 Auto-loaded related machine {:?} because origin {:?} is being viewed", 
           view_related.target, view_related.origin);
+}
+
+/// Observer to apply Select events to editor state
+fn handle_select_event(
+    select: On<Select>,
+    mut editor_state: ResMut<EditorState>,
+    mut q_sm: Query<&mut StateMachineTransientData, With<StateMachine>>,
+) {
+    // Update selected entity in editor state
+    editor_state.selected_entity = select.selected;
+
+    // If currently renaming and a different entity is selected, cancel rename
+    if let Some(new_selection) = select.selected {
+        for mut transient in q_sm.iter_mut() {
+            if let Some(editing_entity) = transient.text_editing.editing_entity {
+                if editing_entity != new_selection {
+                    transient.text_editing.cancel_editing();
+                }
+            }
+        }
+    }
 }
