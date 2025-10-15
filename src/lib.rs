@@ -132,7 +132,50 @@ fn editor_ui_system(
     // Only run if there's an editor window
     if let Ok(mut egui_context) = q_editor_context.single_mut() {
         let ctx = egui_context.get_mut();
-        
+        // Top banner with New/Open actions
+        egui::TopBottomPanel::top("canvas_banner").show(ctx, |ui| {
+            egui::Frame::NONE.show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("New").clicked() {
+                        // Create a new state machine and open it
+                        let new_entity = commands.spawn((
+                            StateMachine::new(),
+                            Name::new("New Machine"),
+                        )).id();
+                        commands.trigger(OpenMachineRequested { entity: new_entity });
+                    }
+                    ui.menu_button("Open", |ui| {
+                        let mut found_machines = false;
+                        for (entity, name_opt) in q_sm.iter() {
+                            // Skip already open machines
+                            if editor_state.is_machine_open(entity) {
+                                continue;
+                            }
+                            // Skip internal NodeKind machines
+                            if let Some(name) = name_opt {
+                                if name.as_str() == "NodeKind" {
+                                    continue;
+                                }
+                            }
+                            found_machines = true;
+                            let display_name = if let Some(name) = name_opt {
+                                name.as_str().to_string()
+                            } else {
+                                format!("Unnamed Machine")
+                            };
+                            if ui.button(&display_name).clicked() {
+                                commands.trigger(OpenMachineRequested { entity });
+                                ui.close();
+                            }
+                        }
+                        if !found_machines {
+                            ui.label("No available machines");
+                        }
+                    });
+                });
+            });
+        });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             // Render each open machine directly on the canvas
             for open_machine in &editor_state.open_machines.clone() {
