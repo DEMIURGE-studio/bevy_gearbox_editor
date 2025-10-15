@@ -248,8 +248,6 @@ impl Default for InspectorTab {
 pub struct ComponentAdditionState {
     /// Search text for filtering components
     pub search_text: String,
-    /// Whether the dropdown is open
-    pub dropdown_open: bool,
     /// Hierarchical component organization (cached)
     pub component_hierarchy: Option<crate::entity_inspector::ComponentHierarchy>,
     /// Expanded state for each namespace

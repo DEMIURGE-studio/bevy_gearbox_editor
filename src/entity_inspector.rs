@@ -261,48 +261,40 @@ fn render_component_addition_ui(world: &mut World, entity: Entity, ui: &mut egui
     // Search text input
     ui.text_edit_singleline(&mut editor_state.component_addition.search_text);
     
-    // Dropdown button
-    let dropdown_response = ui.button("Select Component ▼");
-    if dropdown_response.clicked() {
-        editor_state.component_addition.dropdown_open = !editor_state.component_addition.dropdown_open;
-    }
-    
     // Component dropdown list
-    if editor_state.component_addition.dropdown_open {
-        ui.separator();
-        
-        egui::ScrollArea::vertical()
-            .max_height(300.0)
-            .show(ui, |ui| {
-                // Extract the hierarchy and search text to avoid borrowing conflicts
-                let hierarchy_clone = editor_state.component_addition.component_hierarchy.clone();
-                let search_text = editor_state.component_addition.search_text.clone();
-                
-                if let Some(hierarchy) = hierarchy_clone {
-                    if search_text.is_empty() {
-                        // Show hierarchical view when not searching
-                        render_component_hierarchy(
-                            ui, 
-                            &hierarchy.components, 
-                            String::new(), 
-                            &mut editor_state.component_addition,
-                            world,
-                            entity
-                        );
-                    } else {
-                        // Show flat filtered list when searching
-                        render_filtered_components(
-                            ui,
-                            &hierarchy.components,
-                            &search_text,
-                            world,
-                            entity,
-                            &mut editor_state.component_addition
-                        );
-                    }
+    ui.separator();
+    
+    egui::ScrollArea::vertical()
+        .max_height(300.0)
+        .show(ui, |ui| {
+            // Extract the hierarchy and search text to avoid borrowing conflicts
+            let hierarchy_clone = editor_state.component_addition.component_hierarchy.clone();
+            let search_text = editor_state.component_addition.search_text.clone();
+            
+            if let Some(hierarchy) = hierarchy_clone {
+                if search_text.is_empty() {
+                    // Show hierarchical view when not searching
+                    render_component_hierarchy(
+                        ui, 
+                        &hierarchy.components, 
+                        String::new(), 
+                        &mut editor_state.component_addition,
+                        world,
+                        entity
+                    );
+                } else {
+                    // Show flat filtered list when searching
+                    render_filtered_components(
+                        ui,
+                        &hierarchy.components,
+                        &search_text,
+                        world,
+                        entity,
+                        &mut editor_state.component_addition
+                    );
                 }
-            });
-    }
+            }
+        });
     
     // Put the editor state back
     world.insert_resource(editor_state);
@@ -328,7 +320,6 @@ fn render_component_hierarchy(
             ComponentNode::Component(full_type_path) => {
                 if ui.button(name).clicked() {
                     try_add_component_via_reflection(world, entity, full_type_path);
-                    state.dropdown_open = false;
                 }
             }
             ComponentNode::Namespace(nested_components) => {
@@ -385,7 +376,6 @@ fn collect_matching_components(
                     *found_any = true;
                     if ui.button(format!("{} ({})", name, full_type_path)).clicked() {
                         try_add_component_via_reflection(world, entity, full_type_path);
-                        state.dropdown_open = false;
                         state.search_text.clear();
                     }
                 }

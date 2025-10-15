@@ -758,15 +758,6 @@ fn handle_background_interactions(
     }
 }
 
-/// Calculate the rectangle for a machine on the canvas (for interaction detection)
-fn calculate_machine_rect(open_machine: &OpenMachine) -> egui::Rect {
-    let size = egui::Vec2::new(500.0, 350.0); // Default machine size
-    egui::Rect::from_min_size(
-        egui::Pos2::new(open_machine.canvas_offset.x, open_machine.canvas_offset.y),
-        size,
-    )
-}
-
 /// Apply canvas offset to all nodes in a state machine (for rendering)
 fn apply_canvas_offset_to_nodes(persistent_data: &mut StateMachinePersistentData, offset: egui::Vec2) {
     for node in persistent_data.nodes.values_mut() {
