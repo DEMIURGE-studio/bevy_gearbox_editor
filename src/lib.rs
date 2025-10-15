@@ -134,8 +134,7 @@ fn editor_ui_system(
         let ctx = egui_context.get_mut();
         
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Handle background interactions first
-            handle_background_interactions(ui, &mut editor_state, &mut commands);
+            // Background interactions are handled after node/transition UI below
             
             // Render each open machine directly on the canvas
             for open_machine in &editor_state.open_machines.clone() {
@@ -175,6 +174,9 @@ fn editor_ui_system(
                     remove_canvas_offset_from_nodes(&mut persistent_data, open_machine.canvas_offset);
                 }
             }
+            
+            // Handle background interactions after node/transition interactions so suppression can take effect
+            handle_background_interactions(ui, &mut editor_state, &mut commands);
             
             // Render context menus
             context_menu::render_context_menu(
@@ -703,27 +705,18 @@ fn handle_background_interactions(
         return;
     }
 
-    // Check for right-click on background
+    // Check for right-click anywhere on the canvas (suppressed if a node/transition menu opened this frame)
     if ui.input(|i| i.pointer.secondary_clicked()) {
         let pointer_pos = ui.input(|i| i.pointer.hover_pos().unwrap_or_default());
-        
-        // Check if the click was on empty space (not on any machine)
-        let clicked_on_machine = editor_state.open_machines.iter().any(|machine| {
-            let machine_rect = calculate_machine_rect(machine);
-            machine_rect.contains(pointer_pos)
+        // Mutual exclusivity: close other menus
+        editor_state.context_menu_entity = None;
+        editor_state.context_menu_position = None;
+        editor_state.transition_context_menu = None;
+        editor_state.transition_context_menu_position = None;
+        editor_state.show_machine_selection_menu = false;
+        commands.trigger(BackgroundContextMenuRequested {
+            position: pointer_pos,
         });
-        
-        if !clicked_on_machine {
-            // Mutual exclusivity: close other menus
-            editor_state.context_menu_entity = None;
-            editor_state.context_menu_position = None;
-            editor_state.transition_context_menu = None;
-            editor_state.transition_context_menu_position = None;
-            editor_state.show_machine_selection_menu = false;
-            commands.trigger(BackgroundContextMenuRequested {
-                position: pointer_pos,
-            });
-        }
     }
 }
 
