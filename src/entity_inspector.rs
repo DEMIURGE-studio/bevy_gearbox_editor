@@ -185,7 +185,6 @@ pub fn entity_inspector_system(world: &mut World) {
         let mut ctx = egui_context.clone();
         
         let mut keep_open = true;
-        // Use a stable window id/title so the window retains its position across entity changes
         egui::Window::new("Inspector")
             .id(egui::Id::new("entity_inspector_window"))
             .default_width(300.0)
