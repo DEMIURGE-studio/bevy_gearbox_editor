@@ -11,7 +11,7 @@ Visual editor for bevy_gearbox state machines. Create states and transitions, ar
 
 ## Demo
 
-[![Watch the demo](https://img.youtube.com/vi/BPpJggyqm6E/hqdefault.jpg)](https://youtu.be/BPpJggyqm6E)
+[![Demo animation](assets/demo.webp)](https://youtu.be/BPpJggyqm6E)
 
 ## Features
 
