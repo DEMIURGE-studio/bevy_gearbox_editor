@@ -27,7 +27,7 @@ disqualified = "1.0.0"
 egui = "0.32.0"
 smallvec = "1.15.1"
 
-bevy_gearbox = { version = "0.4.0", path = "../bevy_gearbox" }
+bevy_gearbox = { git = "https://github.com/DEMIURGE-studio/bevy_gearbox" }
 
 [dev-dependencies]
 bevy = "0.17"

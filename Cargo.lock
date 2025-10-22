@@ -772,6 +772,7 @@ dependencies = [
 [[package]]
 name = "bevy_gearbox"
 version = "0.4.0"
+source = "git+https://github.com/DEMIURGE-studio/bevy_gearbox#0a5a033e86f82730f4ab9e303e970d336151dcee"
 dependencies = [
  "bevy",
  "bevy_gearbox_macros",
@@ -797,6 +798,7 @@ dependencies = [
 [[package]]
 name = "bevy_gearbox_macros"
 version = "0.3.0"
+source = "git+https://github.com/DEMIURGE-studio/bevy_gearbox_macros#f80b2dc5c00203d89e77bb2614ca6cbbe0249d52"
 dependencies = [
  "proc-macro2",
  "quote",
