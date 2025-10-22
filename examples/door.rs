@@ -16,8 +16,6 @@ fn main() {
         .add_plugins(WorldInspectorPlugin::new())
         .add_systems(Startup, setup)
         .add_systems(Update, input_system)
-        .add_transition_event::<RequestOpen>()
-        .add_transition_event::<RequestClose>()
         .add_observer(print_enter_state_messages)
         .add_observer(print_exit_state_messages)
         .add_observer(replay_deferred_event::<RequestClose>)

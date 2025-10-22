@@ -3,7 +3,7 @@ use bevy::reflect::Reflect;
 use bevy_egui::EguiPlugin;
 use bevy_gearbox::prelude::*;
 use bevy_gearbox::GearboxPlugin;
-use bevy_gearbox::transitions::{EventEdge, TransitionEventAppExt};
+use bevy_gearbox::transitions::EventEdge;
 use bevy_inspector_egui::inspector_egui_impls::InspectorEguiImpl;
 
 fn main() {
@@ -14,9 +14,6 @@ fn main() {
         .add_plugins(bevy_gearbox_editor::GearboxEditorPlugin)
         .add_systems(Startup, setup)
         .add_systems(Update, input_system)
-        .add_transition_event::<CastAbility>()
-        .add_transition_event::<OnRepeat>()
-        .add_transition_event::<OnComplete>()
         .add_observer(on_enter_repeating_emit_events)
         .add_observer(reset_repeater)
         .add_observer(print_enter_state_messages)

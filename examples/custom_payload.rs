@@ -28,6 +28,7 @@ use bevy_gearbox_editor::GearboxEditorPlugin;
 // --- Events ---
 
 #[derive(EntityEvent, Clone)]
+#[register_transition]
 struct Attack {
     #[event_target]
     pub target: Entity, 
@@ -42,6 +43,7 @@ struct ApplyDamage {
 }
 
 #[derive(EntityEvent, Clone)]
+#[register_transition]
 struct TakeDamage { 
     #[event_target]
     pub target: Entity,
@@ -56,6 +58,7 @@ struct DoDamage {
 }
 
 #[derive(EntityEvent, Clone)]
+#[register_transition]
 struct Die {
     #[event_target]
     pub target: Entity,
@@ -125,9 +128,6 @@ fn main() {
         .add_plugins(GearboxPlugin)
         .add_plugins((EguiPlugin::default(), DefaultInspectorConfigPlugin, GearboxEditorPlugin))
         .init_resource::<RespawnQueue>()
-        .add_transition_event::<Attack>()
-        .add_transition_event::<TakeDamage>()
-        .add_transition_event::<Die>()
         .add_observer(print_enter_state)
         .add_observer(apply_damage_system)
         .add_observer(on_enter_taking_damage_color)
