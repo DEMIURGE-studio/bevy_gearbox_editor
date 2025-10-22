@@ -11,11 +11,7 @@
           4294967350,
           4294967351,
         ]),
-        "bevy_gearbox::StateMachine": (
-          active: [],
-          active_leaves: [],
-        ),
-        "bevy_gearbox::active::Active": (),
+        "bevy_gearbox::StateMachine": (),
         "bevy_gearbox_editor::reflectable::ReflectableStateMachinePersistentData": (
           nodes: {
             4294967349: (
@@ -78,7 +74,6 @@
         "bevy_ecs::hierarchy::ChildOf": (4294967356),
         "bevy_ecs::name::Name": "Ready",
         "bevy_gearbox::StateChildOf": (4294967348),
-        "bevy_gearbox::active::Active": (),
         "bevy_gearbox::transitions::Transitions": ([
           4294967354,
         ]),
@@ -89,7 +84,6 @@
         "bevy_ecs::hierarchy::ChildOf": (64424509500),
         "bevy_ecs::name::Name": "Repeat",
         "bevy_gearbox::StateChildOf": (4294967348),
-        "bevy_gearbox::active::Inactive": (),
         "bevy_gearbox::transitions::Transitions": ([
           4294967353,
           4294967355,
@@ -105,7 +99,6 @@
         "bevy_ecs::hierarchy::ChildOf": (64424509500),
         "bevy_ecs::name::Name": "WaitOneSecond",
         "bevy_gearbox::StateChildOf": (4294967348),
-        "bevy_gearbox::active::Inactive": (),
         "bevy_gearbox::transitions::Transitions": ([
           4294967352,
         ]),
