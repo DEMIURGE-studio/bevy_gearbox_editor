@@ -772,11 +772,10 @@ dependencies = [
 [[package]]
 name = "bevy_gearbox"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee005d29f4a422f5464cbf222e4a7b2f1a5c088f1c32b52eeaf2ac34ae3299cc"
 dependencies = [
  "bevy",
  "bevy_gearbox_macros",
+ "inventory",
 ]
 
 [[package]]
@@ -798,8 +797,6 @@ dependencies = [
 [[package]]
 name = "bevy_gearbox_macros"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4c08359de13a904514d6da51ca8f15a2af00cef636ff4aae4fbfee42893ee88"
 dependencies = [
  "proc-macro2",
  "quote",

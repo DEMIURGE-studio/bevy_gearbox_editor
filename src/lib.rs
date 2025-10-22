@@ -76,12 +76,6 @@ impl Plugin for GearboxEditorPlugin {
             ).chain())
             .add_systems(Update, sync_edge_visuals_from_ecs)
             // NodeKind event listeners
-            .add_transition_event::<node_kind::AddChildClicked>()
-            .add_transition_event::<node_kind::ChildAdded>()
-            .add_transition_event::<node_kind::AllChildrenRemoved>()
-            .add_transition_event::<node_kind::MakeParallelClicked>()
-            .add_transition_event::<node_kind::MakeParentClicked>()
-            .add_transition_event::<node_kind::MakeLeafClicked>()
             .add_observer(node_kind::on_enter_nodekind_state_parallel)
             .add_observer(node_kind::on_enter_nodekind_state_parent)
             .add_observer(node_kind::on_enter_nodekind_state_parent_via_make_parent)
