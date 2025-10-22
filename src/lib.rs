@@ -12,7 +12,6 @@ use bevy_inspector_egui::bevy_inspector::ui_for_world;
 use bevy_gearbox::{StateMachine, InitialState};
 use bevy_gearbox::transitions::{Target, Source, EdgeKind, AlwaysEdge};
 use bevy_ecs::schedule::ScheduleLabel;
-use bevy_gearbox::transitions::TransitionEventAppExt;
 
 // Module declarations
 mod editor_state;
