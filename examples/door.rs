@@ -19,10 +19,10 @@ fn main() {
         .add_observer(print_enter_state_messages)
         .add_observer(print_exit_state_messages)
         .add_observer(replay_deferred_event::<RequestClose>)
-        .add_state_component::<DoorClosed>()
-        .add_state_component::<DoorOpening>()
-        .add_state_component::<DoorOpen>()
-        .add_state_component::<DoorClosing>()
+        .register_state_component::<DoorClosed>()
+        .register_state_component::<DoorOpening>()
+        .register_state_component::<DoorOpen>()
+        .register_state_component::<DoorClosing>()
         .run();
 }
 

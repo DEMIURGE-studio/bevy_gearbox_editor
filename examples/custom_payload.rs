@@ -135,11 +135,11 @@ fn main() {
         .add_observer(do_damage_on_entry)
         .add_systems(Startup, setup)
         .add_systems(Update, (input_attack_event, drive_bounces, process_respawn_queue))
-        .add_state_component::<Waiting>()
-        .add_state_component::<Attacking>()
-        .add_state_component::<TargetWaiting>()
-        .add_state_component::<TakingDamageState>()
-        .add_state_component::<Dead>()
+        .register_state_component::<Waiting>()
+        .register_state_component::<Attacking>()
+        .register_state_component::<TargetWaiting>()
+        .register_state_component::<TakingDamageState>()
+        .register_state_component::<Dead>()
         .run();
 }
 
